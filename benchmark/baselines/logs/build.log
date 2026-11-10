@@ -1,0 +1,22 @@
+# command: pnpm run build (node scripts/build.mjs)
+# node: v22.21.1  pnpm: 9.15.9
+# DSHX_HARNESS=<unset>
+# started: 2026-11-10T14:00:27Z
+----- output -----
+
+> dsh-model-fusion@0.2.11 build /Users/baozipai/Documents/dsh/fusion-next-source-review
+> node scripts/build.mjs
+
+file:///Users/baozipai/Documents/dsh/fusion-next-source-review/scripts/build.mjs:9
+if (!host) throw new Error('Set DSHX_HARNESS to the explicit checkout used for this build')
+                 ^
+
+Error: Set DSHX_HARNESS to the explicit checkout used for this build
+    at file:///Users/baozipai/Documents/dsh/fusion-next-source-review/scripts/build.mjs:9:18
+    at ModuleJob.run (node:internal/modules/esm/module_job:439:25)
+    at async node:internal/modules/esm/loader:643:26
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:116:5)
+
+Node.js v24.18.1
+ ELIFECYCLE  Command failed with exit code 1.
+EXIT_CODE=1

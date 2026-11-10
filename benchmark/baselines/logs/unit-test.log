@@ -1,0 +1,66 @@
+# command: pnpm run test (vitest run, tests/**)
+# node: v22.21.1  pnpm: 9.15.9
+# started: 2026-11-10T13:59:50Z
+----- output -----
+
+> dsh-model-fusion@0.2.11 test /Users/baozipai/Documents/dsh/fusion-next-source-review
+> vitest run
+
+
+ RUN  v4.1.11 /Users/baozipai/Documents/dsh/fusion-next-source-review
+
+ ✓ tests/pr3-probes.spec.ts (30 tests) 15ms
+ ✓ tests/pr3-round2.spec.ts (26 tests) 27ms
+ ✓ tests/pr3-round3.spec.ts (21 tests) 22ms
+ ✓ tests/profile-context-approval.spec.ts (11 tests) 10ms
+ ✓ tests/status.spec.ts (11 tests) 146ms
+ ✓ tests/review-repro.spec.ts (10 tests) 10ms
+ ✓ tests/check-parsers.spec.ts (11 tests) 10ms
+ ✓ tests/direct-turn.spec.ts (58 tests) 12ms
+ ✓ tests/status-polling.spec.ts (8 tests) 62ms
+ ✓ tests/native-boundaries.spec.ts (5 tests) 180ms
+ ✓ tests/reducer.spec.ts (8 tests) 9ms
+ ✓ tests/cache-policy.spec.ts (7 tests) 26ms
+ ✓ tests/handoff-context.spec.ts (6 tests) 45ms
+ ✓ tests/change-evidence.spec.ts (6 tests) 545ms
+ ✓ tests/tool-table.spec.ts (7 tests) 4ms
+ ✓ tests/sqlite-store.spec.ts (6 tests) 51ms
+ ✓ tests/usage.spec.ts (13 tests) 10ms
+ ✓ tests/store.spec.ts (9 tests) 26ms
+ ✓ tests/workspace-paths.spec.ts (8 tests) 10ms
+ ✓ tests/native-evidence.spec.ts (4 tests) 43ms
+ ✓ tests/check-programs.spec.ts (9 tests) 34ms
+ ✓ tests/review-protocol.spec.ts (5 tests) 6ms
+ ✓ tests/control-recovery.spec.ts (3 tests) 3ms
+ ✓ tests/candidate-check-plan.spec.ts (3 tests) 4ms
+ ✓ tests/native-promoted-job.spec.ts (6 tests) 9ms
+ ✓ tests/native-usage-lifecycle.spec.ts (6 tests) 40ms
+ ✓ tests/status-index.spec.ts (8 tests) 966ms
+     ✓ upgrades an old database with bounded dirty batches and rebuilds missing derived tables  586ms
+ ✓ tests/lease.spec.ts (4 tests) 16ms
+ ✓ tests/theme-controls.spec.ts (2 tests) 17ms
+ ✓ tests/recovery-panel.spec.ts (2 tests) 8ms
+ ✓ tests/host-bindings.spec.ts (4 tests) 8ms
+ ✓ tests/worker-terminal.spec.ts (5 tests) 3ms
+ ✓ tests/workflow-progress.spec.ts (4 tests) 5ms
+ ✓ tests/exploration.spec.ts (26 tests) 1187ms
+ ✓ tests/lead-write-boundary.spec.ts (4 tests) 3ms
+ ✓ tests/catalog-modalities.spec.ts (4 tests) 5ms
+ ✓ tests/output-reservation.spec.ts (5 tests) 4ms
+ ✓ tests/native-usage.spec.ts (4 tests) 3ms
+ ✓ tests/workspace-snapshot.spec.ts (3 tests) 196ms
+ ✓ tests/subagent-seam.spec.ts (3 tests) 2ms
+ ✓ tests/workspace-authorization.spec.ts (3 tests) 4ms
+ ✓ tests/evidence-page.spec.ts (3 tests) 77ms
+ ✓ tests/check-command-unavailable.spec.ts (3 tests) 3ms
+ ✓ tests/native-scopes.spec.ts (1 test) 2ms
+ ✓ tests/workspace-guard.spec.ts (3 tests) 2ms
+ ✓ tests/keepalive-choice.spec.ts (1 test) 2ms
+ ✓ tests/link-host.spec.ts (4 tests) 538ms
+
+ Test Files  47 passed (47)
+      Tests  393 passed (393)
+   Start at  21:59:51
+   Duration  2.05s (transform 2.15s, setup 0ms, import 3.65s, tests 4.41s, environment 3ms)
+
+EXIT_CODE=0

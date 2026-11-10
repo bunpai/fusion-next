@@ -1,0 +1,23 @@
+# command: pnpm run typecheck (tsc -p tsconfig.json --noEmit)
+# node: v22.21.1  pnpm: 9.15.9
+# started: 2026-11-10T13:59:38Z
+----- output -----
+
+> dsh-model-fusion@0.2.11 typecheck /Users/baozipai/Documents/dsh/fusion-next-source-review
+> tsc -p tsconfig.json --noEmit
+
+tests/direct-turn.spec.ts(6,41): error TS7006: Parameter 'text' implicitly has an 'any' type.
+tests/direct-turn.spec.ts(11,49): error TS7006: Parameter 'text' implicitly has an 'any' type.
+tests/direct-turn.spec.ts(130,65): error TS7031: Binding element 'prompt' implicitly has an 'any' type.
+tests/direct-turn.spec.ts(130,73): error TS7031: Binding element 'reply' implicitly has an 'any' type.
+tests/direct-turn.spec.ts(136,77): error TS7031: Binding element 'prompt' implicitly has an 'any' type.
+tests/direct-turn.spec.ts(136,85): error TS7031: Binding element 'reply' implicitly has an 'any' type.
+tests/exploration.spec.ts(34,50): error TS7006: Parameter 'source' implicitly has an 'any' type.
+tests/exploration.spec.ts(223,110): error TS7006: Parameter 'status' implicitly has an 'any' type.
+tests/exploration.spec.ts(246,108): error TS7031: Binding element 'apply' implicitly has an 'any' type.
+tests/exploration.spec.ts(246,115): error TS7031: Binding element 'message' implicitly has an 'any' type.
+tests/link-host.spec.ts(40,97): error TS7006: Parameter 'version' implicitly has an 'any' type.
+tests/native-promoted-job.spec.ts(49,77): error TS7006: Parameter 'shell' implicitly has an 'any' type.
+tests/native-usage-lifecycle.spec.ts(26,110): error TS7006: Parameter 'mode' implicitly has an 'any' type.
+ ELIFECYCLE  Command failed with exit code 2.
+EXIT_CODE=2

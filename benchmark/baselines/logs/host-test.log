@@ -1,0 +1,28 @@
+# command: pnpm run test:host (vitest run --config vitest.host.config.mts)
+# node: v22.21.1  pnpm: 9.15.9
+# DSHX_HARNESS=<unset>
+# started: 2026-11-10T14:00:19Z
+----- output -----
+
+> dsh-model-fusion@0.2.11 test:host /Users/baozipai/Documents/dsh/fusion-next-source-review
+> vitest run --config vitest.host.config.mts
+
+failed to load config from /Users/baozipai/Documents/dsh/fusion-next-source-review/vitest.host.config.mts
+
+⎯⎯⎯⎯⎯⎯⎯ Startup Error ⎯⎯⎯⎯⎯⎯⎯⎯
+Error: Native Host tests require DSHX_HARNESS pointing at the pinned checkout
+    at file:///Users/baozipai/Documents/dsh/fusion-next-source-review/node_modules/.vite-temp/vitest.host.config.mts.timestamp-1794319220556-43531721f06328.mjs:8:18
+    at ModuleJob.run (node:internal/modules/esm/module_job:439:25)
+    at async node:internal/modules/esm/loader:643:26
+    at async loadConfigFromBundledFile (file:///Users/baozipai/Documents/dsh/fusion-next-source-review/node_modules/.pnpm/vite@8.2.2_@types+node@22.20.4_yaml@2.9.1/node_modules/vite/dist/node/chunks/node.js:37165:12)
+    at async bundleAndLoadConfigFile (file:///Users/baozipai/Documents/dsh/fusion-next-source-review/node_modules/.pnpm/vite@8.2.2_@types+node@22.20.4_yaml@2.9.1/node_modules/vite/dist/node/chunks/node.js:37015:21)
+    at async loadConfigFromFile (file:///Users/baozipai/Documents/dsh/fusion-next-source-review/node_modules/.pnpm/vite@8.2.2_@types+node@22.20.4_yaml@2.9.1/node_modules/vite/dist/node/chunks/node.js:36975:42)
+    at async resolveConfig (file:///Users/baozipai/Documents/dsh/fusion-next-source-review/node_modules/.pnpm/vite@8.2.2_@types+node@22.20.4_yaml@2.9.1/node_modules/vite/dist/node/chunks/node.js:36581:22)
+    at async _createServer (file:///Users/baozipai/Documents/dsh/fusion-next-source-review/node_modules/.pnpm/vite@8.2.2_@types+node@22.20.4_yaml@2.9.1/node_modules/vite/dist/node/chunks/node.js:26388:65)
+    at async createViteServer (file:///Users/baozipai/Documents/dsh/fusion-next-source-review/node_modules/.pnpm/vitest@4.1.11_@types+node@22.20.4_yaml@2.9.1/node_modules/vitest/dist/chunks/cli-api.CnMVyzaz.js:8902:17)
+    at async createVitest (file:///Users/baozipai/Documents/dsh/fusion-next-source-review/node_modules/.pnpm/vitest@4.1.11_@types+node@22.20.4_yaml@2.9.1/node_modules/vitest/dist/chunks/cli-api.CnMVyzaz.js:14288:18)
+
+
+
+ ELIFECYCLE  Command failed with exit code 1.
+EXIT_CODE=1
