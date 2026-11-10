@@ -213,3 +213,42 @@ Open items for the Lead (out of scope for A01, not fixed here):
 
 1. `pnpm run typecheck` is red on `8f97428` (13 implicit-`any` diagnostics in `tests/direct-turn.spec.ts`, `tests/exploration.spec.ts`, `tests/link-host.spec.ts`, `tests/native-promoted-job.spec.ts`, `tests/native-usage-lifecycle.spec.ts`). Either the gate is repaired in a later stage or the A01 acceptance baseline is amended — this receipt records the failure as found.
 2. Host tests and build need a DSH `0.2.1-rc.*` source checkout; they are unverified on this machine.
+
+## 9. Stage-2 addendum — typecheck repair (2026-11-10, after the baseline commit)
+
+Everything above is the **baseline as found at `8f97428`** and stays true as history: at that commit
+`pnpm run typecheck` exits 2. The gate was then repaired in a separate commit, `9e2df6e`
+(`fix(types): restore real SDK typing in the A01 typecheck gate`).
+
+**Root cause (verified, not guessed).** `tsconfig.json` set `"preserveSymlinks": true`. Under pnpm's
+symlinked store that stops TypeScript from following the transitive `.d.ts` imports inside `vitest` and
+`@deepseek-ai/dsh-*`; with `"skipLibCheck": true` the failed resolution inside those library declarations is
+swallowed, every imported symbol degrades to `any`, and the only visible symptom is implicit-`any` in the
+`.each(...)` callbacks. Evidence:
+
+- `pnpm exec tsc -p tsconfig.json --noEmit --preserveSymlinks false` (a CLI override, no file changes)
+  returned **exactly one** error: `src/host/coordinator.ts(669,43): error TS2345: Argument of type
+  'number | undefined' is not assignable to parameter of type 'SessionLogOffset | undefined'` — and **zero**
+  errors in `tests/**`.
+- Dropping the flag in `tsconfig.json` alone made all 13 test errors disappear **without editing any test
+  file**, which is only possible if the tests had been untyped (`any`) rather than wrongly typed.
+- Implication worth recording: until this repair, the typecheck gate was effectively blind to the whole
+  DSH SDK contract (every `@deepseek-ai/dsh-*` type was `any`).
+
+**Changes, all confined to that commit:**
+
+| File | Change | Why |
+|---|---|---|
+| `tsconfig.json` | removed `"preserveSymlinks": true` | let typecheck resolve the real dependency types |
+| `tsconfig.build.json` | added `"preserveSymlinks": true` | keep the declaration-emit path exactly as the shipped 0.2.11 build had it |
+| `src/host/native-task-context.ts` | `begin(..., firstSeq: number = agent.session.seq)` | the only genuine error the restored types surfaced: callers and the stored `Origin.firstSeq` use a plain number, and the branded `SessionLogOffset` is assignable to `number`; runtime behaviour is unchanged |
+
+**Verification after the repair:**
+
+| Command | Exit | Result |
+|---|---|---|
+| `pnpm run typecheck` | **0** | no diagnostics (previously 2) |
+| `pnpm run test` | **0** | `Test Files 47 passed (47)` / `Tests 393 passed (393)` — unchanged |
+
+`pnpm run test:host` and `pnpm run build` remain **blocked** exactly as in §4.3/§4.4/§5 (no compatible
+`DSHX_HARNESS` checkout on this machine); nothing in this repair changes them.
