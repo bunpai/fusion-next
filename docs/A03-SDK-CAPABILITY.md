@@ -11,7 +11,7 @@
 | 1 | **selection**（模型选择） | **可用 + 需要扩展** | `installModelSelection()` / `ModelSelectionRef`（`dsh-agent/lib/types/model-selection.d.ts:25,49`）；Host API `selectModel()`（`dsh-api-session-controller/lib/types/index.d.ts:107`） |
 | 2 | **session fork** | **可用 + 需要扩展** | `ctx.sessions.fork(source, boundary?, childSessionId?)`（`dsh-session/lib/types/index.d.ts:513`）、`buildForkSeed()`（`.../fork.d.ts:17`）、`SessionForkError`（`index.d.ts:367`）、Host API `fork()`（`dsh-api-session-controller/lib/types/index.d.ts:164`） |
 | 3 | **agent/create** | **可用** | `ctx.agents.create/resume`（`dsh-agent/lib/types/index.d.ts:278,286`）、`AgentFactory.createAgent()`（`:172`）、`CreateAgentOptions.meta/seed/parentAgent`（`:48-84`） |
-| 4 | **compaction** | **可用 + 需要扩展** | `ctx.compaction.compactIfNeeded/compactNow/compactRegion`（`dsh-compaction/lib/types/index.d.ts:116,137,157`）、`CompactionCheckpointSource`（`index.d.ts:23`） |
+| 4 | **compaction** | **可用 + 需要扩展** | `ctx.compaction.compactIfNeeded/compactNow/compactRegion`（`dsh-compaction/lib/types/index.d.ts:116,137,157`）、`CompactionCheckpointSource`（`index.d.ts:18-23`） |
 | 5 | **effects**（工具副作用幂等/结算） | **不可用（SDK 无此原语）** | 只有 `JobRegistry`（`dsh-jobs/lib/types/index.d.ts:59,71,128,137`）与工具调用恢复码 `TOOL_NOT_STARTED` / `TOOL_OUTCOME_UNKNOWN`（`dsh-session/lib/types/repair.d.ts:9,11,42`） |
 | 6 | **审批** | **可用 + 需要扩展** | `ApprovalService.request()`（`dsh-user-approval/lib/types/index.d.ts:135`）、`setApprovalPolicy()`（`:63`）、`setPolicy()`（`:116`）、策略 `'ask' \| 'never'`（`:56`） |
 
@@ -34,7 +34,7 @@
 **可用的原语。**
 - `SessionStore.fork(source, boundary?, childSessionId?)`（`index.d.ts:513`）：从**活跃**源会话的某个包含式 seq 前缀fork 出新的 live 子会话；边界省略即取最后一条事件；开放尾会被 `buildForkSeed()` 用合成 tool-result 与 step/turn 结束事件收口（`fork.d.ts:17`）。`inheritedEventCount` 只统计真正拷贝的源事件，不含合成收口事件。
 - **血缘是持久元数据**：`SessionHeader` 的 `parentSession` / `isSeeded` / `inheritedEventCount`（`types.d.ts:110,140`）随存储头一起写入；`Session.inheritedEventCount` 在实例上可读（`index.d.ts:152`）。
-- **错误是分类的**：`SESSION_NOT_FOUND | SESSION_NOT_LIVE | SESSION_ALREADY_EXISTS | INVALID_BOUNDARY`（`index.d.ts:358-368`）。这点直接决定 C01 的"历史会话激活"必须区分"冷会话"与"活跃会话"。
+- **错误是分类的**：`SESSION_NOT_FOUND | SESSION_NOT_LIVE | SESSION_ALREADY_EXISTS | INVALID_BOUNDARY`（`index.d.ts:364-368`）。这点直接决定 C01 的"历史会话激活"必须区分"冷会话"与"活跃会话"。
 - Host 侧另有 `fork()`（`dsh-api-session-controller/lib/types/index.d.ts:164`），语义是"把一个可冷读的精确前缀 fork 成新会话，边界省略取最后一个完整 turn"，并会发 `session/fork-unavailable`（`types.d.ts:228`）——这就是 GUI「创建分支」走的路径。
 
 **缺口（→ C01 / C03）。**
@@ -73,7 +73,7 @@
 
 **可用的原语。** `ctx.approval.request(req)`（`index.d.ts:135`）返回封闭结果，`'allowed-once'` 是唯一授权值；`ApprovalPolicy = 'ask' | 'never'`（`:56`），可 `setApprovalPolicy(session, policy)`（`:63`，写 durable override）或 `setPolicy(agent, policy)`（`:116`，排队到下一个 model step）。每次 ask/outcome 都成对写入请求方 session 的日志，未落盘则整体 reject。
 
-**硬约束（已验证的注释语义）。** `request()` **要求当前有打开的 turn**："The request requires an open turn because the audit pair must be enclosed by the durable log's commit/replay boundary; an idle ask rejects before appending anything."（`:118-130`）
+**硬约束（已验证的注释语义）。** `request()` **要求当前有打开的 turn**："The request requires an open turn because the audit pair must be enclosed by the durable log's commit/replay boundary; an idle ask rejects before appending anything."（`:118-132`）
 
 **缺口（→ E01 / D03）。** 审批只按 session 策略、只针对**工具调用**；没有针对"Takeover 写租约"这类非工具动作的授权对象，也没有可撤销的一次性租约。E01 的 Takeover 授权必须自建（并复用同一审计风格），且不能在空闲时借道 `approval.request` 阻塞式索权。
 
