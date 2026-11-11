@@ -160,6 +160,22 @@ export class RunManager {
       assignments.run(assignment.assignmentId, assignment.runId, assignment.briefRevision, assignment.role,
         assignment.workerAgentId ?? null, assignment.status, JSON.stringify(assignment.writeScope))
     }
+    const budgets = this.db.prepare(`INSERT INTO fusion_budgets (budget_id, hard_cost, max_calls, max_retries, spent, reserved, approval_id)
+      VALUES (?,?,?,?,?,?,?) ON CONFLICT(budget_id) DO UPDATE SET
+      hard_cost=excluded.hard_cost, max_calls=excluded.max_calls, max_retries=excluded.max_retries,
+      spent=excluded.spent, reserved=excluded.reserved, approval_id=excluded.approval_id`)
+    const usage = this.db.prepare(`INSERT INTO fusion_usage (provider_request_id, attempt, run_id, price_version, input_tokens, cache_read_tokens, output_tokens, cost, status)
+      VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(provider_request_id, attempt) DO UPDATE SET
+      price_version=excluded.price_version, input_tokens=excluded.input_tokens, cache_read_tokens=excluded.cache_read_tokens,
+      output_tokens=excluded.output_tokens, cost=excluded.cost, status=excluded.status`)
+    for (const budget of Object.values(state.budgets)) {
+      budgets.run(budget.budgetId, budget.hardCostMicros / 1_000_000, budget.maxCalls ?? null, budget.maxRetries ?? null,
+        budget.spentMicros / 1_000_000, budget.reservedMicros / 1_000_000, budget.approvalId ?? null)
+      for (const entry of Object.values(budget.usage)) {
+        usage.run(entry.providerRequestId, entry.attempt, entry.runId, entry.priceVersion ?? null,
+          entry.inputTokens, entry.cacheReadTokens, entry.outputTokens, entry.costMicros / 1_000_000, entry.status)
+      }
+    }
     const transitions = this.db.prepare(`INSERT INTO fusion_transitions (id, run_id, agent_id, from_gen, to_gen, phase, expected_revision, error, created_at, updated_at)
       VALUES (?,?,?,?,?,?,?,?,?,?)
       ON CONFLICT(id) DO UPDATE SET from_gen=excluded.from_gen,to_gen=excluded.to_gen,phase=excluded.phase,error=excluded.error,updated_at=excluded.updated_at`)

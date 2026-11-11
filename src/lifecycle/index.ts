@@ -135,6 +135,35 @@ type ContextCheckpointed = {
   generationId: AgentGenerationId; epoch: number; digest: string; totalTokens: number
   layerTokens: { L0: number; L1: number; L2: number; L3: number }
 }
+export interface BudgetRecord {
+  budgetId: string; hardCostMicros: number; maxCalls?: number; maxRetries?: number
+  spentMicros: number; reservedMicros: number; approvedOverrunMicros: number; approvalId?: string
+  openReservations: Readonly<Record<string, number>>
+  usage: Readonly<Record<string, BudgetUsageEntry>>
+}
+export interface BudgetUsageEntry {
+  runId: FusionRunId
+  providerRequestId: string; attempt: number; route: ModelRoute; priceVersion?: string
+  inputTokens: number; outputTokens: number; cacheReadTokens: number
+  costMicros: number; status: 'COMPLETED' | 'FAILED' | 'CANCELLED'
+}
+type BudgetReserved = {
+  type: 'BUDGET_RESERVED'; runId: FusionRunId; budgetId: string; hardCostMicros: number
+  maxCalls?: number; maxRetries?: number
+}
+type BudgetCallReserved = {
+  type: 'BUDGET_CALL_RESERVED'; runId: FusionRunId; budgetId: string; reservationId: string; reserveMicros: number
+}
+type BudgetReservationSettled = {
+  type: 'BUDGET_RESERVATION_SETTLED'; runId: FusionRunId; budgetId: string; reservationId: string
+  providerRequestId: string; attempt: number; route: ModelRoute; priceVersion?: string
+  inputTokens: number; outputTokens: number; cacheReadTokens: number
+  costMicros: number; priced: boolean; status: 'COMPLETED' | 'FAILED' | 'CANCELLED'
+}
+type BudgetOverrunApproved = {
+  type: 'BUDGET_OVERRUN_APPROVED'; runId: FusionRunId; budgetId: string; extraMicros: number
+  approvalId: string; approver: string
+}
 type AssignmentCreated = {
   type: 'ASSIGNMENT_CREATED'; runId: FusionRunId; assignmentId: string; role: AssignmentRole
   workerAgentId?: string; brief: { objective: string; constraints: string[]; contextRefs: string[]; revision: number }
@@ -164,7 +193,7 @@ type TransitionRolledBack = { type: 'TRANSITION_ROLLED_BACK'; runId: FusionRunId
 type TransitionEvents = TransitionCheckpointed | TransitionCommitted | TransitionRolledBack
 
 export type LifecycleEvent = { readonly schemaVersion: 1; readonly eventId: string; readonly seq: number; readonly expectedRevision: number } &
-  (Created | Forked | Bound | RunChange | Prepared | GenerationChange | SwitchCommitted | EffectIntent | EffectTransition | TransitionEvents | AuthorityIssued | AssignmentCreated | AssignmentBriefRevised | AssignmentReported | AssignmentCompleted | AssignmentFailed | AssignmentTakeover | ContextCheckpointed)
+  (Created | Forked | Bound | RunChange | Prepared | GenerationChange | SwitchCommitted | EffectIntent | EffectTransition | TransitionEvents | AuthorityIssued | AssignmentCreated | AssignmentBriefRevised | AssignmentReported | AssignmentCompleted | AssignmentFailed | AssignmentTakeover | ContextCheckpointed | BudgetReserved | BudgetCallReserved | BudgetReservationSettled | BudgetOverrunApproved)
 export interface LifecycleState {
   readonly revision: number
   readonly seq: number
@@ -177,6 +206,7 @@ export interface LifecycleState {
   readonly authorities: Readonly<Record<string, GenerationAuthority>>
   readonly assignments: Readonly<Record<string, AssignmentRecord>>
   readonly reports: Readonly<Record<string, AgentReportRecord>>
+  readonly budgets: Readonly<Record<string, BudgetRecord>>
   readonly checkpoints: Readonly<Record<string, ContextCheckpointRef>>
   /** Event id -> canonical payload; replay duplicate with differing payload is a conflict. */
   readonly appliedEvents: Readonly<Record<string, string>>
@@ -192,9 +222,14 @@ function deepFreeze<T>(value: T): T {
 const stable = (value: unknown): string => JSON.stringify(value, (_key, item: unknown) =>
   item && typeof item === 'object' && !Array.isArray(item)
     ? Object.fromEntries(Object.entries(item as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b))) : item)
-export const emptyLifecycleState = (): LifecycleState => deepFreeze({ revision: 0, seq: 0, runs: dictionary(), aliases: dictionary(), generations: dictionary(), lineage: dictionary(), effects: dictionary(), transitions: dictionary(), authorities: dictionary(), assignments: dictionary(), reports: dictionary(), checkpoints: dictionary(), appliedEvents: dictionary() })
+export const emptyLifecycleState = (): LifecycleState => deepFreeze({ revision: 0, seq: 0, runs: dictionary(), aliases: dictionary(), generations: dictionary(), lineage: dictionary(), effects: dictionary(), transitions: dictionary(), authorities: dictionary(), assignments: dictionary(), reports: dictionary(), checkpoints: dictionary(), budgets: dictionary(), appliedEvents: dictionary() })
 const invalid = (reason: string): never => { throw new Error(`lifecycle conflict: ${reason}`) }
 function assert(condition: unknown, reason: string): asserts condition { if (!condition) invalid(reason) }
+function requireBudget(budgets: Record<string, BudgetRecord>, budgetId: string): BudgetRecord {
+  const record = budgets[budgetId]
+  if (!record) invalid(`budget ${budgetId} unknown`)
+  return record
+}
 function requireAssignment(assignments: Record<string, AssignmentRecord>, assignmentId: string): AssignmentRecord {
   const record = assignments[assignmentId]
   if (!record) invalid(`assignment ${assignmentId} unknown`)
@@ -220,7 +255,7 @@ export function reduceLifecycle(state: LifecycleState, event: LifecycleEvent): L
   }
   assert(event.seq === state.seq + 1, `out-of-order seq: expected ${state.seq + 1}`)
   assert(event.expectedRevision === state.revision, `stale revision: expected ${state.revision}`)
-  const runs = dictionary(state.runs), aliases = dictionary(state.aliases), generations = dictionary(state.generations), lineage = dictionary(state.lineage), effects = dictionary(state.effects), transitions = dictionary(state.transitions), authorities = dictionary(state.authorities), assignments = dictionary(state.assignments), reports = dictionary(state.reports), checkpoints = dictionary(state.checkpoints)
+  const runs = dictionary(state.runs), aliases = dictionary(state.aliases), generations = dictionary(state.generations), lineage = dictionary(state.lineage), effects = dictionary(state.effects), transitions = dictionary(state.transitions), authorities = dictionary(state.authorities), assignments = dictionary(state.assignments), reports = dictionary(state.reports), checkpoints = dictionary(state.checkpoints), budgets = dictionary(state.budgets)
   const current = runs[event.runId]
   const requireRun = (): FusionRun => current ?? invalid('unknown run')
   const requireEffect = (effectId: string): EffectRecord => effects[effectId] ?? invalid('unknown effect')
@@ -528,6 +563,69 @@ export function reduceLifecycle(state: LifecycleState, event: LifecycleEvent): L
       changeRun({})
       break
     }
+    case 'BUDGET_RESERVED': {
+      assert(runs[event.runId] !== undefined, 'budget run unknown')
+      assert(!budgets[event.budgetId], 'budget id already exists')
+      assert(Number.isSafeInteger(event.hardCostMicros) && event.hardCostMicros >= 0, 'budget cap must be a non-negative integer')
+      assert(event.maxCalls === undefined || (Number.isSafeInteger(event.maxCalls) && event.maxCalls >= 0), 'budget max calls must be a non-negative integer')
+      assert(event.maxRetries === undefined || (Number.isSafeInteger(event.maxRetries) && event.maxRetries >= 0), 'budget max retries must be a non-negative integer')
+      budgets[event.budgetId] = { budgetId: event.budgetId, hardCostMicros: event.hardCostMicros,
+        maxCalls: event.maxCalls, maxRetries: event.maxRetries, spentMicros: 0, reservedMicros: 0,
+        approvedOverrunMicros: 0, openReservations: dictionary(), usage: dictionary() }
+      changeRun({})
+      break
+    }
+    case 'BUDGET_CALL_RESERVED': {
+      const budget = requireBudget(budgets, event.budgetId)
+      assert(!budget.openReservations[event.reservationId], 'budget reservation id already exists')
+      assert(Number.isSafeInteger(event.reserveMicros) && event.reserveMicros > 0, 'budget reservation must be a positive integer')
+      assert(budget.reservedMicros + event.reserveMicros <= budget.hardCostMicros + budget.approvedOverrunMicros,
+        'budget reservation exceeds cap')
+      const openReservations = dictionary(budget.openReservations)
+      openReservations[event.reservationId] = event.reserveMicros
+      budgets[event.budgetId] = { ...budget, reservedMicros: budget.reservedMicros + event.reserveMicros, openReservations }
+      changeRun({})
+      break
+    }
+    case 'BUDGET_RESERVATION_SETTLED': {
+      const budget = requireBudget(budgets, event.budgetId)
+      const reservation = budget.openReservations[event.reservationId]
+      assert(reservation !== undefined, 'budget reservation unknown')
+      assert(event.status === 'COMPLETED' || event.status === 'FAILED' || event.status === 'CANCELLED', 'unknown settlement status')
+      assert(Number.isSafeInteger(event.attempt) && event.attempt >= 0, 'settlement attempt must be a non-negative integer')
+      assert(Number.isSafeInteger(event.inputTokens) && event.inputTokens >= 0, 'settlement tokens must be non-negative integers')
+      assert(Number.isSafeInteger(event.outputTokens) && event.outputTokens >= 0, 'settlement tokens must be non-negative integers')
+      assert(Number.isSafeInteger(event.cacheReadTokens) && event.cacheReadTokens >= 0, 'settlement tokens must be non-negative integers')
+      if (event.priced) {
+        assert(Number.isSafeInteger(event.costMicros) && event.costMicros >= 0, 'settlement cost must be a non-negative integer')
+        // Zero unauthorized overrun: the settled cost must fit cap + explicitly approved overrun.
+        assert(event.status !== 'COMPLETED' || budget.spentMicros + event.costMicros <= budget.hardCostMicros + budget.approvedOverrunMicros,
+          'budget settlement exceeds cap')
+      } else {
+        assert(event.status !== 'COMPLETED', 'unpriced spend cannot be settled')
+      }
+      const openReservations = dictionary(budget.openReservations)
+      delete openReservations[event.reservationId]
+      const usage = dictionary(budget.usage)
+      const usageKey = `${event.providerRequestId}#${event.attempt}`
+      usage[usageKey] = { runId: event.runId, providerRequestId: event.providerRequestId, attempt: event.attempt, route: event.route,
+        priceVersion: event.priceVersion, inputTokens: event.inputTokens, outputTokens: event.outputTokens,
+        cacheReadTokens: event.cacheReadTokens, costMicros: event.priced ? event.costMicros : 0, status: event.status }
+      budgets[event.budgetId] = { ...budget,
+        spentMicros: event.priced && event.status === 'COMPLETED' ? budget.spentMicros + event.costMicros : budget.spentMicros,
+        reservedMicros: budget.reservedMicros - reservation, openReservations, usage }
+      changeRun({})
+      break
+    }
+    case 'BUDGET_OVERRUN_APPROVED': {
+      const budget = requireBudget(budgets, event.budgetId)
+      assert(Number.isSafeInteger(event.extraMicros) && event.extraMicros > 0, 'budget overrun must be a positive integer')
+      assert(event.approvalId.length > 0 && event.approver.length > 0, 'budget overrun approval required')
+      budgets[event.budgetId] = { ...budget, approvedOverrunMicros: budget.approvedOverrunMicros + event.extraMicros,
+        approvalId: event.approvalId }
+      changeRun({})
+      break
+    }
     case 'AUTHORITY_ISSUED': {
       // An authority profile is bound to exactly one generation at preparation time and is
       // immutable afterwards; Worker/Lead/Reviewer resume from this profile, never broader.
@@ -542,7 +640,7 @@ export function reduceLifecycle(state: LifecycleState, event: LifecycleEvent): L
     }
     default: invalid('unknown event type')
   }
-  return deepFreeze({ revision: state.revision + 1, seq: event.seq, runs, aliases, generations, lineage, effects, transitions, authorities, assignments, reports, checkpoints,
+  return deepFreeze({ revision: state.revision + 1, seq: event.seq, runs, aliases, generations, lineage, effects, transitions, authorities, assignments, reports, checkpoints, budgets,
     appliedEvents: dictionary({ ...state.appliedEvents, [event.eventId]: fingerprint }) })
 }
 export function replayLifecycle(events: readonly LifecycleEvent[], initial = emptyLifecycleState()): LifecycleState {
