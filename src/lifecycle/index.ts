@@ -93,10 +93,17 @@ export interface EffectRecord {
 }
 export type TransitionMode = 'MANUAL' | 'AUTO_UPGRADE' | 'AUTO_DOWNGRADE' | 'CROSS_PROVIDER'
 export type TransitionPhaseState = 'CHECKPOINTED' | 'COMMITTED' | 'ROLLED_BACK'
+export interface TransitionTargetSpec {
+  agentId: string; sessionId: string
+  route: { provider: string; model: string; capabilityDigest: string }
+  requirements: { requireTools?: string[]; minContextTokens?: number; capabilityDigest?: string }
+}
 export interface TransitionRecord {
   transitionId: string; runId: FusionRunId; agentId: string; mode: TransitionMode
   fromGenerationId: AgentGenerationId; toGenerationId: AgentGenerationId
   phase: TransitionPhaseState; expectedRevision: number; error?: string
+  /** H03: the target spec journaled at checkpoint time so a restart can resume without re-asking. */
+  toSpec?: TransitionTargetSpec
 }
 export interface GenerationAuthority {
   generationId: AgentGenerationId; runId: FusionRunId
@@ -226,6 +233,7 @@ type AuthorityIssued = {
 type TransitionCheckpointed = {
   type: 'TRANSITION_CHECKPOINTED'; runId: FusionRunId; transitionId: string; agentId: string
   mode: TransitionMode; fromGenerationId: AgentGenerationId; toGenerationId: AgentGenerationId
+  toSpec?: TransitionTargetSpec
 }
 type TransitionCommitted = { type: 'TRANSITION_COMMITTED'; runId: FusionRunId; transitionId: string }
 type TransitionRolledBack = { type: 'TRANSITION_ROLLED_BACK'; runId: FusionRunId; transitionId: string; error?: string }
@@ -505,9 +513,14 @@ export function reduceLifecycle(state: LifecycleState, event: LifecycleEvent): L
       assert(generations[event.fromGenerationId]?.runId === event.runId, 'transition source generation mismatch')
       assert(event.toGenerationId !== event.fromGenerationId, 'transition target equals source')
       assert(event.mode === 'MANUAL' || event.mode === 'AUTO_UPGRADE' || event.mode === 'AUTO_DOWNGRADE' || event.mode === 'CROSS_PROVIDER', 'unknown transition mode')
+      if (event.toSpec) {
+        assert(event.toSpec.agentId === event.agentId, 'transition target spec agent mismatch')
+        assert(event.toSpec.sessionId.length > 0, 'transition target spec session required')
+        assert(event.toSpec.route.provider.length > 0 && event.toSpec.route.model.length > 0, 'transition target spec route required')
+      }
       transitions[event.transitionId] = { transitionId: event.transitionId, runId: event.runId, agentId: event.agentId,
         mode: event.mode, fromGenerationId: event.fromGenerationId, toGenerationId: event.toGenerationId,
-        phase: 'CHECKPOINTED', expectedRevision: event.expectedRevision }
+        phase: 'CHECKPOINTED', expectedRevision: event.expectedRevision, toSpec: event.toSpec }
       changeRun({})
       break
     }

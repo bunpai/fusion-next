@@ -97,7 +97,10 @@ export class TransitionService {
     if (!existing) {
       this.appendEvent(runId, { schemaVersion: 1, eventId: `fusion/transition/${spec.transitionId}/checkpointed`,
         type: 'TRANSITION_CHECKPOINTED', runId, transitionId: spec.transitionId, agentId: spec.agentId,
-        mode: spec.mode, fromGenerationId: spec.fromGenerationId, toGenerationId: spec.to.generationId } as RunEventInput)
+        mode: spec.mode, fromGenerationId: spec.fromGenerationId, toGenerationId: spec.to.generationId,
+        toSpec: { agentId: spec.agentId, sessionId: spec.to.sessionId,
+          route: { provider: spec.to.route.provider, model: spec.to.route.model, capabilityDigest: spec.to.route.capabilityDigest },
+          requirements: spec.to.requirements } } as RunEventInput)
     }
     if (options.crashAfter === 'checkpoint') {
       throw new Error(`injected crash after transition checkpoint (transition ${spec.transitionId})`)
