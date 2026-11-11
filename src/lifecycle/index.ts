@@ -98,6 +98,10 @@ export interface TransitionRecord {
   fromGenerationId: AgentGenerationId; toGenerationId: AgentGenerationId
   phase: TransitionPhaseState; expectedRevision: number; error?: string
 }
+export interface GenerationAuthority {
+  generationId: AgentGenerationId; runId: FusionRunId
+  toolScope: readonly string[]; writePaths: readonly string[]; approvalRequired: readonly string[]
+}
 type EffectIntent = {
   type: 'EFFECT_INTENT_RECORDED'; runId: FusionRunId; effectId: string
   generationId: AgentGenerationId; toolCallId: string; effectClass: EffectClass
@@ -109,6 +113,10 @@ type EffectTransition = {
   receiptRef?: string; outcome?: 'SUCCEEDED' | 'FAILED_KNOWN'
 }
 /** Internal projected domain events, NOT discovered or promised Host SDK events. */
+type AuthorityIssued = {
+  type: 'AUTHORITY_ISSUED'; runId: FusionRunId; generationId: AgentGenerationId
+  toolScope: string[]; writePaths: string[]; approvalRequired: string[]
+}
 type TransitionCheckpointed = {
   type: 'TRANSITION_CHECKPOINTED'; runId: FusionRunId; transitionId: string; agentId: string
   mode: TransitionMode; fromGenerationId: AgentGenerationId; toGenerationId: AgentGenerationId
@@ -118,7 +126,7 @@ type TransitionRolledBack = { type: 'TRANSITION_ROLLED_BACK'; runId: FusionRunId
 type TransitionEvents = TransitionCheckpointed | TransitionCommitted | TransitionRolledBack
 
 export type LifecycleEvent = { readonly schemaVersion: 1; readonly eventId: string; readonly seq: number; readonly expectedRevision: number } &
-  (Created | Forked | Bound | RunChange | Prepared | GenerationChange | SwitchCommitted | EffectIntent | EffectTransition | TransitionEvents)
+  (Created | Forked | Bound | RunChange | Prepared | GenerationChange | SwitchCommitted | EffectIntent | EffectTransition | TransitionEvents | AuthorityIssued)
 export interface LifecycleState {
   readonly revision: number
   readonly seq: number
@@ -128,6 +136,7 @@ export interface LifecycleState {
   readonly lineage: Readonly<Record<string, BranchLineage>>
   readonly effects: Readonly<Record<string, EffectRecord>>
   readonly transitions: Readonly<Record<string, TransitionRecord>>
+  readonly authorities: Readonly<Record<string, GenerationAuthority>>
   /** Event id -> canonical payload; replay duplicate with differing payload is a conflict. */
   readonly appliedEvents: Readonly<Record<string, string>>
 }
@@ -142,9 +151,17 @@ function deepFreeze<T>(value: T): T {
 const stable = (value: unknown): string => JSON.stringify(value, (_key, item: unknown) =>
   item && typeof item === 'object' && !Array.isArray(item)
     ? Object.fromEntries(Object.entries(item as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b))) : item)
-export const emptyLifecycleState = (): LifecycleState => deepFreeze({ revision: 0, seq: 0, runs: dictionary(), aliases: dictionary(), generations: dictionary(), lineage: dictionary(), effects: dictionary(), transitions: dictionary(), appliedEvents: dictionary() })
+export const emptyLifecycleState = (): LifecycleState => deepFreeze({ revision: 0, seq: 0, runs: dictionary(), aliases: dictionary(), generations: dictionary(), lineage: dictionary(), effects: dictionary(), transitions: dictionary(), authorities: dictionary(), appliedEvents: dictionary() })
 const invalid = (reason: string): never => { throw new Error(`lifecycle conflict: ${reason}`) }
 function assert(condition: unknown, reason: string): asserts condition { if (!condition) invalid(reason) }
+function isSortedUnique(values: readonly string[]): boolean {
+  for (let i = 0; i < values.length; i += 1) {
+    const value = values[i]
+    if (value.length === 0 || value.includes('\u0000')) return false
+    if (i > 0 && values[i - 1] >= value) return false
+  }
+  return true
+}
 
 export function reduceLifecycle(state: LifecycleState, event: LifecycleEvent): LifecycleState {
   assert(event.schemaVersion === 1, 'unsupported event schema version')
@@ -157,7 +174,7 @@ export function reduceLifecycle(state: LifecycleState, event: LifecycleEvent): L
   }
   assert(event.seq === state.seq + 1, `out-of-order seq: expected ${state.seq + 1}`)
   assert(event.expectedRevision === state.revision, `stale revision: expected ${state.revision}`)
-  const runs = dictionary(state.runs), aliases = dictionary(state.aliases), generations = dictionary(state.generations), lineage = dictionary(state.lineage), effects = dictionary(state.effects), transitions = dictionary(state.transitions)
+  const runs = dictionary(state.runs), aliases = dictionary(state.aliases), generations = dictionary(state.generations), lineage = dictionary(state.lineage), effects = dictionary(state.effects), transitions = dictionary(state.transitions), authorities = dictionary(state.authorities)
   const current = runs[event.runId]
   const requireRun = (): FusionRun => current ?? invalid('unknown run')
   const requireEffect = (effectId: string): EffectRecord => effects[effectId] ?? invalid('unknown effect')
@@ -381,9 +398,21 @@ export function reduceLifecycle(state: LifecycleState, event: LifecycleEvent): L
       changeRun({})
       break
     }
+    case 'AUTHORITY_ISSUED': {
+      // An authority profile is bound to exactly one generation at preparation time and is
+      // immutable afterwards; Worker/Lead/Reviewer resume from this profile, never broader.
+      assert(generations[event.generationId] !== undefined && generations[event.generationId].runId === event.runId, 'authority generation ownership mismatch')
+      assert(!authorities[event.generationId], 'authority already issued')
+      assert(isSortedUnique(event.toolScope) && isSortedUnique(event.writePaths) && isSortedUnique(event.approvalRequired), 'invalid authority scope')
+      assert(event.approvalRequired.every(tool => event.toolScope.includes(tool)), 'approval requirement outside tool scope')
+      authorities[event.generationId] = { generationId: event.generationId, runId: event.runId,
+        toolScope: event.toolScope, writePaths: event.writePaths, approvalRequired: event.approvalRequired }
+      changeRun({})
+      break
+    }
     default: invalid('unknown event type')
   }
-  return deepFreeze({ revision: state.revision + 1, seq: event.seq, runs, aliases, generations, lineage, effects, transitions,
+  return deepFreeze({ revision: state.revision + 1, seq: event.seq, runs, aliases, generations, lineage, effects, transitions, authorities,
     appliedEvents: dictionary({ ...state.appliedEvents, [event.eventId]: fingerprint }) })
 }
 export function replayLifecycle(events: readonly LifecycleEvent[], initial = emptyLifecycleState()): LifecycleState {

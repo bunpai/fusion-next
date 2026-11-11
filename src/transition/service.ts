@@ -3,6 +3,7 @@ import { FusionRunId, type AgentGenerationId, type TransitionMode } from '../lif
 import { requireHostOperation, type HostCapabilityReport } from '../host-capabilities/index.js'
 import { GenerationService, RouteCapabilityRegistry, type CapabilityRequirements } from '../generation/service.js'
 import type { EffectLedger } from '../effects/ledger.js'
+import type { AuthorityService, AuthoritySpec } from '../authority/index.js'
 import type { ModelRoute } from '../lifecycle/index.js'
 
 /** D03 transition manager.
@@ -23,7 +24,7 @@ export type TransitionRequestSpec = {
   agentId: string
   mode: TransitionMode
   fromGenerationId: AgentGenerationId
-  to: { generationId: AgentGenerationId; sessionId: string; route: ModelRoute; requirements: CapabilityRequirements }
+  to: { generationId: AgentGenerationId; sessionId: string; route: ModelRoute; requirements: CapabilityRequirements; authority?: AuthoritySpec }
 }
 
 export type TransitionOptions = { crashAfter?: 'checkpoint' | 'prepare' }
@@ -39,7 +40,7 @@ const UNSETTLED = new Set(['INTENT', 'EXECUTING', 'NEEDS_REPAIR'])
 export class TransitionService {
   constructor(private readonly manager: RunManager, private readonly report: HostCapabilityReport,
     private readonly generations: GenerationService, private readonly ledger: EffectLedger,
-    private readonly registry: RouteCapabilityRegistry) {}
+    private readonly registry: RouteCapabilityRegistry, private readonly authority?: AuthorityService) {}
 
   request(runId: FusionRunId, spec: TransitionRequestSpec, options: TransitionOptions = {}): TransitionOutcome {
     requireHostOperation(this.report, 'lifecycle.transition')
@@ -70,6 +71,20 @@ export class TransitionService {
       this.registry.assertCapable(spec.to.route, spec.to.requirements)
     } catch (error) {
       return { outcome: 'REJECTED', runId, reason: error instanceof Error ? error.message : String(error) }
+    }
+
+    // AUTHORITY — a replacement generation must not widen tool scope, writable paths or drop
+    // approval demands (plan D04: permissions must not expand across a switch). Checked against
+    // the source generation's bound profile BEFORE any event. A source with no bound profile
+    // (fork-fresh/unprofiled legacy generation) has no baseline to compare against.
+    if (this.authority && spec.to.authority) {
+      const fromProfile = state.authorities[spec.fromGenerationId]
+      if (fromProfile) {
+        const expansion = this.authority.expansion(fromProfile, spec.to.authority)
+        if (expansion.length > 0) {
+          return { outcome: 'REJECTED', runId, reason: `authority expansion: ${expansion.join(', ')}` }
+        }
+      }
     }
 
     // REPAIR — unsettled effects make the run un-switchable (fail-closed, visible, no auto-retry).
@@ -105,11 +120,22 @@ export class TransitionService {
         if (!(toGen && toGen.status === 'ACTIVE' && runNow && runNow.currentGenerationIds[spec.agentId] === spec.to.generationId)) {
           throw new Error(`TRANSITION_CONFLICT: source generation ${spec.fromGenerationId} retired without a current replacement`)
         }
+        if (this.authority && spec.to.authority && !fresh.authorities[spec.to.generationId]) {
+          this.authority.issue(runId, spec.to.generationId, spec.to.authority)
+        }
       } else {
         if (fromGen && fromGen.status === 'ACTIVE') this.generations.drain(runId, spec.fromGenerationId)
         if (toGen === undefined || toGen.status === 'RETIRED') {
           // A RETIRED target id fails reducer validation; that failure is a real rollback case.
           this.generations.prepare(runId, spec.agentId, spec.to.sessionId, spec.to.generationId, spec.to.route, spec.to.requirements)
+        }
+      }
+      // AUTHORITY — bind the replacement's profile BEFORE the atomic commit so the generation
+      // is never ACTIVE without an authority; idempotent when the journal already has it.
+      if (this.authority && spec.to.authority) {
+        const latest = this.manager.getState()
+        if (!latest.authorities[spec.to.generationId]) {
+          this.authority.issue(runId, spec.to.generationId, spec.to.authority)
         }
       }
       if (options.crashAfter === 'prepare') {
