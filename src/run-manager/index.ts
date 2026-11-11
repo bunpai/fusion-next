@@ -146,6 +146,12 @@ export class RunManager {
     for (const gen of Object.values(state.generations)) {
       generations.run(gen.id, gen.agentId, gen.sessionId, gen.epoch, gen.route.provider, gen.route.model, gen.route.capabilityDigest, gen.status)
     }
+    const effects = this.db.prepare(`INSERT INTO fusion_effects (effect_id,run_id,generation_id,tool_call_id,fingerprint,state,receipt_ref,idempotency_key)
+      VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(effect_id) DO UPDATE SET state=excluded.state,receipt_ref=excluded.receipt_ref`)
+    for (const effect of Object.values(state.effects)) {
+      effects.run(effect.effectId, effect.runId, effect.generationId, effect.toolCallId, effect.fingerprint,
+        effect.state, effect.receiptRef ?? null, effect.idempotencyKey)
+    }
   }
   close(): void { if (!this.closed) { this.db.close(); this.closed = true } }
 }

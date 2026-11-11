@@ -74,9 +74,36 @@ type RunChange = { type: 'RUN_SUSPEND_REQUESTED' | 'RUN_SUSPENDED'; runId: Fusio
 type Prepared = { type: 'GENERATION_PREPARED'; runId: FusionRunId; generationId: AgentGenerationId; agentId: string; sessionId: string; route: ModelRoute; epoch: number }
 type SwitchCommitted = { type: 'GENERATION_SWITCH_COMMITTED'; runId: FusionRunId; fromGenerationId: AgentGenerationId; toGenerationId: AgentGenerationId }
 type GenerationChange = { type: 'GENERATION_ACTIVATED' | 'GENERATION_DRAINING' | 'GENERATION_RETIRED' | 'GENERATION_CALLBACK' | 'GENERATION_PREPARATION_ABORTED' | 'GENERATION_DRAIN_CANCELLED'; runId: FusionRunId; generationId: AgentGenerationId }
+
+/** D01 effect idempotency classes: safe auto-retry, verify-before-retry, never auto-retry. */
+export type EffectClass = 'IDEMPOTENT' | 'NEEDS_VERIFICATION' | 'NEVER_RETRY'
+export type EffectState = 'INTENT' | 'EXECUTING' | 'SETTLED' | 'NEEDS_REPAIR' | 'DISCARDED'
+export interface EffectRecord {
+  readonly effectId: string
+  readonly runId: FusionRunId
+  readonly generationId: AgentGenerationId
+  readonly toolCallId: string
+  readonly effectClass: EffectClass
+  readonly fingerprint: string
+  readonly idempotencyKey: string
+  readonly state: EffectState
+  readonly receiptRef?: string
+  readonly outcome?: 'SUCCEEDED' | 'FAILED_KNOWN'
+  readonly resolvedBy?: 'receipt' | 'reconcile'
+}
+type EffectIntent = {
+  type: 'EFFECT_INTENT_RECORDED'; runId: FusionRunId; effectId: string
+  generationId: AgentGenerationId; toolCallId: string; effectClass: EffectClass
+  fingerprint: string; idempotencyKey: string
+}
+type EffectTransition = {
+  type: 'EFFECT_DISPATCHED' | 'EFFECT_RECEIPT_RECORDED' | 'EFFECT_UNRESOLVED' | 'EFFECT_RECONCILED' | 'EFFECT_DISCARDED'
+  runId: FusionRunId; effectId: string
+  receiptRef?: string; outcome?: 'SUCCEEDED' | 'FAILED_KNOWN'
+}
 /** Internal projected domain events, NOT discovered or promised Host SDK events. */
 export type LifecycleEvent = { readonly schemaVersion: 1; readonly eventId: string; readonly seq: number; readonly expectedRevision: number } &
-  (Created | Forked | Bound | RunChange | Prepared | GenerationChange | SwitchCommitted)
+  (Created | Forked | Bound | RunChange | Prepared | GenerationChange | SwitchCommitted | EffectIntent | EffectTransition)
 export interface LifecycleState {
   readonly revision: number
   readonly seq: number
@@ -84,6 +111,7 @@ export interface LifecycleState {
   readonly aliases: Readonly<Record<string, SessionAlias>>
   readonly generations: Readonly<Record<string, AgentGeneration>>
   readonly lineage: Readonly<Record<string, BranchLineage>>
+  readonly effects: Readonly<Record<string, EffectRecord>>
   /** Event id -> canonical payload; replay duplicate with differing payload is a conflict. */
   readonly appliedEvents: Readonly<Record<string, string>>
 }
@@ -98,7 +126,7 @@ function deepFreeze<T>(value: T): T {
 const stable = (value: unknown): string => JSON.stringify(value, (_key, item: unknown) =>
   item && typeof item === 'object' && !Array.isArray(item)
     ? Object.fromEntries(Object.entries(item as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b))) : item)
-export const emptyLifecycleState = (): LifecycleState => deepFreeze({ revision: 0, seq: 0, runs: dictionary(), aliases: dictionary(), generations: dictionary(), lineage: dictionary(), appliedEvents: dictionary() })
+export const emptyLifecycleState = (): LifecycleState => deepFreeze({ revision: 0, seq: 0, runs: dictionary(), aliases: dictionary(), generations: dictionary(), lineage: dictionary(), effects: dictionary(), appliedEvents: dictionary() })
 const invalid = (reason: string): never => { throw new Error(`lifecycle conflict: ${reason}`) }
 function assert(condition: unknown, reason: string): asserts condition { if (!condition) invalid(reason) }
 
@@ -113,9 +141,10 @@ export function reduceLifecycle(state: LifecycleState, event: LifecycleEvent): L
   }
   assert(event.seq === state.seq + 1, `out-of-order seq: expected ${state.seq + 1}`)
   assert(event.expectedRevision === state.revision, `stale revision: expected ${state.revision}`)
-  const runs = dictionary(state.runs), aliases = dictionary(state.aliases), generations = dictionary(state.generations), lineage = dictionary(state.lineage)
+  const runs = dictionary(state.runs), aliases = dictionary(state.aliases), generations = dictionary(state.generations), lineage = dictionary(state.lineage), effects = dictionary(state.effects)
   const current = runs[event.runId]
   const requireRun = (): FusionRun => current ?? invalid('unknown run')
+  const requireEffect = (effectId: string): EffectRecord => effects[effectId] ?? invalid('unknown effect')
   const changeRun = (patch: Partial<FusionRun>): void => { runs[event.runId] = { ...requireRun(), ...patch, revision: requireRun().revision + 1 } }
   const requireAlias = (sessionId: SessionAliasId): SessionAlias => {
     const alias = aliases[sessionId]
@@ -245,9 +274,64 @@ export function reduceLifecycle(state: LifecycleState, event: LifecycleEvent): L
       generations[gen.id] = { ...gen, status: event.type === 'GENERATION_ACTIVATED' ? 'ACTIVE' : event.type === 'GENERATION_DRAINING' ? 'DRAINING' : 'RETIRED' }
       break
     }
+    case 'EFFECT_INTENT_RECORDED': {
+      // An effect belongs to one run and one agent generation; the generation must already exist.
+      // changeRun({}) keeps the per-run CAS revision advancing with every appended event.
+      changeRun({})
+      assert(!effects[event.effectId], 'effect id already exists')
+      assert(!Object.values(effects).some(e => e.idempotencyKey === event.idempotencyKey), 'effect idempotency key already exists')
+      assert(Boolean(event.toolCallId && event.fingerprint && event.idempotencyKey), 'incomplete effect intent')
+      assert(event.effectClass === 'IDEMPOTENT' || event.effectClass === 'NEEDS_VERIFICATION' || event.effectClass === 'NEVER_RETRY', 'unknown effect class')
+      assert(generations[event.generationId]?.runId === event.runId, 'effect generation ownership mismatch')
+      effects[event.effectId] = { effectId: event.effectId, runId: event.runId, generationId: event.generationId,
+        toolCallId: event.toolCallId, effectClass: event.effectClass, fingerprint: event.fingerprint,
+        idempotencyKey: event.idempotencyKey, state: 'INTENT' }
+      break
+    }
+    case 'EFFECT_DISPATCHED': {
+      const effect = requireEffect(event.effectId)
+      // Re-dispatching a running effect is only safe for the IDEMPOTENT class.
+      assert(effect.state === 'INTENT' || (effect.state === 'EXECUTING' && effect.effectClass === 'IDEMPOTENT'), 'illegal effect dispatch')
+      effects[event.effectId] = { ...effect, state: 'EXECUTING' }
+      changeRun({})
+      break
+    }
+    case 'EFFECT_RECEIPT_RECORDED': {
+      const effect = requireEffect(event.effectId)
+      assert(effect.state === 'EXECUTING', 'illegal effect receipt')
+      assert(Boolean(event.receiptRef) && (event.outcome === 'SUCCEEDED' || event.outcome === 'FAILED_KNOWN'), 'incomplete effect receipt')
+      effects[event.effectId] = { ...effect, state: 'SETTLED', receiptRef: event.receiptRef, outcome: event.outcome, resolvedBy: 'receipt' }
+      changeRun({})
+      break
+    }
+    case 'EFFECT_UNRESOLVED': {
+      // Unknown external outcome: the effect can never be silently retried from here.
+      const effect = requireEffect(event.effectId)
+      assert(effect.state === 'EXECUTING', 'unknown outcome requires a dispatched effect')
+      effects[event.effectId] = { ...effect, state: 'NEEDS_REPAIR' }
+      changeRun({})
+      break
+    }
+    case 'EFFECT_RECONCILED': {
+      // Human/adapter-verified resolution of a NEEDS_REPAIR effect records evidence before settling.
+      const effect = requireEffect(event.effectId)
+      assert(effect.state === 'NEEDS_REPAIR', 'only unresolved effects can be reconciled')
+      assert((event.outcome === 'SUCCEEDED' || event.outcome === 'FAILED_KNOWN') && Boolean(event.receiptRef), 'incomplete effect reconciliation')
+      effects[event.effectId] = { ...effect, state: 'SETTLED', receiptRef: event.receiptRef, outcome: event.outcome, resolvedBy: 'reconcile' }
+      changeRun({})
+      break
+    }
+    case 'EFFECT_DISCARDED': {
+      // Only an intent that was never dispatched can be discarded without external verification.
+      const effect = requireEffect(event.effectId)
+      assert(effect.state === 'INTENT', 'only undispatched intents can be discarded')
+      effects[event.effectId] = { ...effect, state: 'DISCARDED' }
+      changeRun({})
+      break
+    }
     default: invalid('unknown event type')
   }
-  return deepFreeze({ revision: state.revision + 1, seq: event.seq, runs, aliases, generations, lineage,
+  return deepFreeze({ revision: state.revision + 1, seq: event.seq, runs, aliases, generations, lineage, effects,
     appliedEvents: dictionary({ ...state.appliedEvents, [event.eventId]: fingerprint }) })
 }
 export function replayLifecycle(events: readonly LifecycleEvent[], initial = emptyLifecycleState()): LifecycleState {
