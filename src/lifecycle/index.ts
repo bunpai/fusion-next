@@ -115,6 +115,10 @@ export interface AgentReportRecord {
   reportId: string; runId: FusionRunId; assignmentId: string; generationId: AgentGenerationId
   summary: string; status: ReportStatus; artifacts: readonly string[]
 }
+export interface ContextCheckpointRef {
+  checkpointId: string; runId: FusionRunId; generationId: AgentGenerationId; epoch: number
+  digest: string; totalTokens: number; layerTokens: { L0: number; L1: number; L2: number; L3: number }
+}
 type EffectIntent = {
   type: 'EFFECT_INTENT_RECORDED'; runId: FusionRunId; effectId: string
   generationId: AgentGenerationId; toolCallId: string; effectClass: EffectClass
@@ -126,6 +130,11 @@ type EffectTransition = {
   receiptRef?: string; outcome?: 'SUCCEEDED' | 'FAILED_KNOWN'
 }
 /** Internal projected domain events, NOT discovered or promised Host SDK events. */
+type ContextCheckpointed = {
+  type: 'CONTEXT_CHECKPOINTED'; runId: FusionRunId; checkpointId: string
+  generationId: AgentGenerationId; epoch: number; digest: string; totalTokens: number
+  layerTokens: { L0: number; L1: number; L2: number; L3: number }
+}
 type AssignmentCreated = {
   type: 'ASSIGNMENT_CREATED'; runId: FusionRunId; assignmentId: string; role: AssignmentRole
   workerAgentId?: string; brief: { objective: string; constraints: string[]; contextRefs: string[]; revision: number }
@@ -155,7 +164,7 @@ type TransitionRolledBack = { type: 'TRANSITION_ROLLED_BACK'; runId: FusionRunId
 type TransitionEvents = TransitionCheckpointed | TransitionCommitted | TransitionRolledBack
 
 export type LifecycleEvent = { readonly schemaVersion: 1; readonly eventId: string; readonly seq: number; readonly expectedRevision: number } &
-  (Created | Forked | Bound | RunChange | Prepared | GenerationChange | SwitchCommitted | EffectIntent | EffectTransition | TransitionEvents | AuthorityIssued | AssignmentCreated | AssignmentBriefRevised | AssignmentReported | AssignmentCompleted | AssignmentFailed | AssignmentTakeover)
+  (Created | Forked | Bound | RunChange | Prepared | GenerationChange | SwitchCommitted | EffectIntent | EffectTransition | TransitionEvents | AuthorityIssued | AssignmentCreated | AssignmentBriefRevised | AssignmentReported | AssignmentCompleted | AssignmentFailed | AssignmentTakeover | ContextCheckpointed)
 export interface LifecycleState {
   readonly revision: number
   readonly seq: number
@@ -168,6 +177,7 @@ export interface LifecycleState {
   readonly authorities: Readonly<Record<string, GenerationAuthority>>
   readonly assignments: Readonly<Record<string, AssignmentRecord>>
   readonly reports: Readonly<Record<string, AgentReportRecord>>
+  readonly checkpoints: Readonly<Record<string, ContextCheckpointRef>>
   /** Event id -> canonical payload; replay duplicate with differing payload is a conflict. */
   readonly appliedEvents: Readonly<Record<string, string>>
 }
@@ -182,7 +192,7 @@ function deepFreeze<T>(value: T): T {
 const stable = (value: unknown): string => JSON.stringify(value, (_key, item: unknown) =>
   item && typeof item === 'object' && !Array.isArray(item)
     ? Object.fromEntries(Object.entries(item as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b))) : item)
-export const emptyLifecycleState = (): LifecycleState => deepFreeze({ revision: 0, seq: 0, runs: dictionary(), aliases: dictionary(), generations: dictionary(), lineage: dictionary(), effects: dictionary(), transitions: dictionary(), authorities: dictionary(), assignments: dictionary(), reports: dictionary(), appliedEvents: dictionary() })
+export const emptyLifecycleState = (): LifecycleState => deepFreeze({ revision: 0, seq: 0, runs: dictionary(), aliases: dictionary(), generations: dictionary(), lineage: dictionary(), effects: dictionary(), transitions: dictionary(), authorities: dictionary(), assignments: dictionary(), reports: dictionary(), checkpoints: dictionary(), appliedEvents: dictionary() })
 const invalid = (reason: string): never => { throw new Error(`lifecycle conflict: ${reason}`) }
 function assert(condition: unknown, reason: string): asserts condition { if (!condition) invalid(reason) }
 function requireAssignment(assignments: Record<string, AssignmentRecord>, assignmentId: string): AssignmentRecord {
@@ -210,7 +220,7 @@ export function reduceLifecycle(state: LifecycleState, event: LifecycleEvent): L
   }
   assert(event.seq === state.seq + 1, `out-of-order seq: expected ${state.seq + 1}`)
   assert(event.expectedRevision === state.revision, `stale revision: expected ${state.revision}`)
-  const runs = dictionary(state.runs), aliases = dictionary(state.aliases), generations = dictionary(state.generations), lineage = dictionary(state.lineage), effects = dictionary(state.effects), transitions = dictionary(state.transitions), authorities = dictionary(state.authorities), assignments = dictionary(state.assignments), reports = dictionary(state.reports)
+  const runs = dictionary(state.runs), aliases = dictionary(state.aliases), generations = dictionary(state.generations), lineage = dictionary(state.lineage), effects = dictionary(state.effects), transitions = dictionary(state.transitions), authorities = dictionary(state.authorities), assignments = dictionary(state.assignments), reports = dictionary(state.reports), checkpoints = dictionary(state.checkpoints)
   const current = runs[event.runId]
   const requireRun = (): FusionRun => current ?? invalid('unknown run')
   const requireEffect = (effectId: string): EffectRecord => effects[effectId] ?? invalid('unknown effect')
@@ -503,6 +513,21 @@ export function reduceLifecycle(state: LifecycleState, event: LifecycleEvent): L
       changeRun({})
       break
     }
+    case 'CONTEXT_CHECKPOINTED': {
+      assert(!checkpoints[event.checkpointId], 'checkpoint id already exists')
+      const generation = generations[event.generationId]
+      assert(generation !== undefined && generation.runId === event.runId, 'checkpoint generation mismatch')
+      assert(generation.epoch === event.epoch, 'checkpoint epoch mismatch')
+      assert(event.digest.length > 0, 'checkpoint digest required')
+      assert(Number.isSafeInteger(event.totalTokens) && event.totalTokens >= 0, 'checkpoint totals must be a non-negative integer')
+      const summed = event.layerTokens.L0 + event.layerTokens.L1 + event.layerTokens.L2 + event.layerTokens.L3
+      assert(summed === event.totalTokens, 'checkpoint layer tokens must sum to total')
+      checkpoints[event.checkpointId] = { checkpointId: event.checkpointId, runId: event.runId,
+        generationId: event.generationId, epoch: event.epoch, digest: event.digest,
+        totalTokens: event.totalTokens, layerTokens: event.layerTokens }
+      changeRun({})
+      break
+    }
     case 'AUTHORITY_ISSUED': {
       // An authority profile is bound to exactly one generation at preparation time and is
       // immutable afterwards; Worker/Lead/Reviewer resume from this profile, never broader.
@@ -517,7 +542,7 @@ export function reduceLifecycle(state: LifecycleState, event: LifecycleEvent): L
     }
     default: invalid('unknown event type')
   }
-  return deepFreeze({ revision: state.revision + 1, seq: event.seq, runs, aliases, generations, lineage, effects, transitions, authorities, assignments, reports,
+  return deepFreeze({ revision: state.revision + 1, seq: event.seq, runs, aliases, generations, lineage, effects, transitions, authorities, assignments, reports, checkpoints,
     appliedEvents: dictionary({ ...state.appliedEvents, [event.eventId]: fingerprint }) })
 }
 export function replayLifecycle(events: readonly LifecycleEvent[], initial = emptyLifecycleState()): LifecycleState {
