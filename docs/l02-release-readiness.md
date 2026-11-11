@@ -29,13 +29,23 @@
 
 | 项 | 计划依据 | 缺失条件 |
 |---|---|---|
-| `test:host` / `build` 门禁 | 仓库 package.json | 无 DSHX_HARNESS（用户未提供 Host 源码检出路径） |
+| `build` 门禁 | scripts/build.mjs | DSHX_HARNESS 检出缺 `tools/dshx/src/client-build.js`，且要求 Host 0.2.0-rc.2（实有 0.1.6-alpha.2） |
+| compat 门禁（vitest.compat.config.mts） | 仓库 | DSHX_COMPACT_SAVIOUR 目标插件（含 Controller/CompactionRouteRegistry 的旧版源码）本机不存在；已装 dsh-model-fusion@0.2.11 无这些符号 |
 | 双 Host 版本验收（rc.2/rc.5） | §15 | 需真实 Desktop Host 两版本运行 |
 | 三臂基准（强 Direct / 既有 Fusion / Fusion Next）与多 seed | §15 | 需真实 Provider 与预算受控执行 |
 | 隐藏验证任务集、成功率/成本/恢复率指标 | §15 | 同上 |
 | Provider 故障注入（429/超时/取消）真实链路 | §15 | 需真实 Provider |
 | DSH Web GUI 操作回归（S01–S20 部分） | §14 | 需真实 Host GUI |
 | E0–E3 证据在真实工件上的采样验证 | §9 | 需真实任务执行 |
+
+### 2.1 test:host 门禁已跑通（版本偏斜如实记录）
+
+用户提供检索授权后发现本机固定检出 `~/dsh/releases/0.1.6-alpha.2`（即 `~/dsh/current`，git 12a1f7c）。以 `DSHX_HARNESS=$HOME/dsh/releases/0.1.6-alpha.2` 执行 `pnpm run test:host`：
+
+- 结果：7 文件 / 314 用例，**284 通过 / 29 失败 / 1 跳过**（约 51s）。
+- 对照实验：在验收基线 `8861970` 上建临时 worktree（软链同一外部 node_modules）复跑，失败集合与 HEAD **完全一致**（diff 为空，29 项逐一相同）——即这 29 项失败为本仓原生测试与该 Host 检出之间的**既有差距，非本会话回归**；本会话从未改动 `src/host/coordinator.ts`、`native-tests/*`（git log 8861970..HEAD 为空）。
+- 失败模式样例：`Agent preset binding requires a scoped context`（FusionCoordinator 装配语义差异）、frozen compactor 路由、delegation preflight——均为 0.2.0-rc.2 语义（见 RELEASE-0.2.0-rc.2.md）在 0.1.6-alpha.2 Host 上的不匹配。
+- 结论：**test:host = 已验证执行，零回归；29 项既有失败属宿主版本偏斜**，待 0.2.0-rc.2 Host 检出后复验。
 
 ## 3. 发布判定
 
