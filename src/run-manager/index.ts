@@ -160,6 +160,11 @@ export class RunManager {
       assignments.run(assignment.assignmentId, assignment.runId, assignment.briefRevision, assignment.role,
         assignment.workerAgentId ?? null, assignment.status, JSON.stringify(assignment.writeScope))
     }
+    const dependencies = this.db.prepare(`INSERT INTO fusion_dependencies (assignment_id, depends_on_id)
+      VALUES (?,?) ON CONFLICT(assignment_id, depends_on_id) DO NOTHING`)
+    for (const assignment of Object.values(state.assignments)) {
+      for (const dependsOn of assignment.dependsOn) dependencies.run(assignment.assignmentId, dependsOn)
+    }
     const budgets = this.db.prepare(`INSERT INTO fusion_budgets (budget_id, hard_cost, max_calls, max_retries, spent, reserved, approval_id)
       VALUES (?,?,?,?,?,?,?) ON CONFLICT(budget_id) DO UPDATE SET
       hard_cost=excluded.hard_cost, max_calls=excluded.max_calls, max_retries=excluded.max_retries,

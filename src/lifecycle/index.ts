@@ -110,6 +110,8 @@ export interface AssignmentRecord {
   briefRevision: number; objective: string; constraints: readonly string[]; contextRefs: readonly string[]
   writeScope: readonly string[]; status: AssignmentStatus; lastReportId?: string
   takenBy?: string; takenReason?: string
+  /** H01: DAG dependencies (sorted, acyclic) and currently-held file claims (released on finalize). */
+  dependsOn: readonly string[]; claimedPaths: readonly string[]
 }
 export interface AgentReportRecord {
   reportId: string; runId: FusionRunId; assignmentId: string; generationId: AgentGenerationId
@@ -201,6 +203,8 @@ type AssignmentReported = {
 type AssignmentCompleted = { type: 'ASSIGNMENT_COMPLETED'; runId: FusionRunId; assignmentId: string; reportId: string }
 type AssignmentFailed = { type: 'ASSIGNMENT_FAILED'; runId: FusionRunId; assignmentId: string; reportId: string }
 type AssignmentTakeover = { type: 'ASSIGNMENT_TAKEOVER'; runId: FusionRunId; assignmentId: string; byAgentId: string; reason: string }
+type AssignmentDependencyDeclared = { type: 'ASSIGNMENT_DEPENDENCY_DECLARED'; runId: FusionRunId; assignmentId: string; dependsOnId: string }
+type AssignmentFilesClaimed = { type: 'ASSIGNMENT_FILES_CLAIMED'; runId: FusionRunId; assignmentId: string; paths: string[] }
 type AuthorityIssued = {
   type: 'AUTHORITY_ISSUED'; runId: FusionRunId; generationId: AgentGenerationId
   toolScope: string[]; writePaths: string[]; approvalRequired: string[]
@@ -214,7 +218,7 @@ type TransitionRolledBack = { type: 'TRANSITION_ROLLED_BACK'; runId: FusionRunId
 type TransitionEvents = TransitionCheckpointed | TransitionCommitted | TransitionRolledBack
 
 export type LifecycleEvent = { readonly schemaVersion: 1; readonly eventId: string; readonly seq: number; readonly expectedRevision: number } &
-  (Created | Forked | Bound | RunChange | Prepared | GenerationChange | SwitchCommitted | EffectIntent | EffectTransition | TransitionEvents | AuthorityIssued | AssignmentCreated | AssignmentBriefRevised | AssignmentReported | AssignmentCompleted | AssignmentFailed | AssignmentTakeover | ContextCheckpointed | BudgetReserved | BudgetCallReserved | BudgetReservationSettled | BudgetOverrunApproved | CacheEntryRecorded | CacheKeepaliveTick | CacheKeepaliveStopped | DelegationOutcomeRecorded)
+  (Created | Forked | Bound | RunChange | Prepared | GenerationChange | SwitchCommitted | EffectIntent | EffectTransition | TransitionEvents | AuthorityIssued | AssignmentCreated | AssignmentBriefRevised | AssignmentReported | AssignmentCompleted | AssignmentFailed | AssignmentTakeover | AssignmentDependencyDeclared | AssignmentFilesClaimed | ContextCheckpointed | BudgetReserved | BudgetCallReserved | BudgetReservationSettled | BudgetOverrunApproved | CacheEntryRecorded | CacheKeepaliveTick | CacheKeepaliveStopped | DelegationOutcomeRecorded)
 export interface LifecycleState {
   readonly revision: number
   readonly seq: number
@@ -519,7 +523,7 @@ export function reduceLifecycle(state: LifecycleState, event: LifecycleEvent): L
       assignments[event.assignmentId] = { assignmentId: event.assignmentId, runId: event.runId, role: event.role,
         workerAgentId: event.workerAgentId, briefRevision: event.brief.revision, objective: event.brief.objective,
         constraints: event.brief.constraints, contextRefs: event.brief.contextRefs, writeScope: event.writeScope,
-        status: 'OPEN' }
+        status: 'OPEN', dependsOn: [], claimedPaths: [] }
       changeRun({})
       break
     }
@@ -562,7 +566,7 @@ export function reduceLifecycle(state: LifecycleState, event: LifecycleEvent): L
       assert(report !== undefined && report.runId === event.runId && report.assignmentId === event.assignmentId, 'assignment report unknown')
       const wanted = event.type === 'ASSIGNMENT_COMPLETED' ? 'COMPLETED' : 'FAILED'
       assert(report.status === wanted, 'assignment completion requires a matching report status')
-      assignments[event.assignmentId] = { ...record, status: wanted }
+      assignments[event.assignmentId] = { ...record, status: wanted, claimedPaths: [] }
       changeRun({})
       break
     }
@@ -573,6 +577,51 @@ export function reduceLifecycle(state: LifecycleState, event: LifecycleEvent): L
       assert(runs[event.runId].agentIds.includes(event.byAgentId), 'takeover agent not in run')
       assert(event.reason.length > 0, 'takeover reason required')
       assignments[event.assignmentId] = { ...record, status: 'TAKEN_OVER', takenBy: event.byAgentId, takenReason: event.reason }
+      changeRun({})
+      break
+    }
+    case 'ASSIGNMENT_DEPENDENCY_DECLARED': {
+      const record = requireAssignment(assignments, event.assignmentId)
+      assert(record.runId === event.runId, 'assignment run mismatch')
+      const dependency = requireAssignment(assignments, event.dependsOnId)
+      assert(dependency.runId === event.runId, 'assignment run mismatch')
+      assert(event.assignmentId !== event.dependsOnId, 'assignment cannot depend on itself')
+      assert(record.status === 'OPEN', 'dependencies can only be declared on open assignments')
+      assert(dependency.status === 'OPEN', 'dependencies can only target open assignments')
+      // Adding assignment -> dependsOn creates a cycle iff dependsOn already reaches assignment.
+      const stack = [event.dependsOnId]
+      const visited = new Set<string>()
+      while (stack.length > 0) {
+        const node = stack.pop() as string
+        if (node === event.assignmentId) assert(false, 'assignment dependency cycle')
+        if (visited.has(node)) continue
+        visited.add(node)
+        const nodeRecord = assignments[node]
+        if (nodeRecord) stack.push(...nodeRecord.dependsOn)
+      }
+      if (!record.dependsOn.includes(event.dependsOnId)) {
+        assignments[event.assignmentId] = { ...record, dependsOn: [...record.dependsOn, event.dependsOnId].sort() }
+      }
+      changeRun({})
+      break
+    }
+    case 'ASSIGNMENT_FILES_CLAIMED': {
+      const record = requireAssignment(assignments, event.assignmentId)
+      assert(record.runId === event.runId, 'assignment run mismatch')
+      assert(record.status === 'OPEN', 'files can only be claimed by open assignments')
+      assert(isSortedUnique(event.paths), 'invalid claimed paths')
+      for (const claimed of event.paths) {
+        for (const other of Object.values(assignments)) {
+          if (other.assignmentId === event.assignmentId) continue
+          if (other.runId !== event.runId) continue
+          if (other.status !== 'OPEN' && other.status !== 'TAKEN_OVER') continue
+          assert(!other.claimedPaths.includes(claimed),
+            `file path ${claimed} already claimed by assignment ${other.assignmentId}`)
+        }
+      }
+      const merged = [...record.claimedPaths]
+      for (const claimed of event.paths) if (!merged.includes(claimed)) merged.push(claimed)
+      assignments[event.assignmentId] = { ...record, claimedPaths: merged.sort() }
       changeRun({})
       break
     }
