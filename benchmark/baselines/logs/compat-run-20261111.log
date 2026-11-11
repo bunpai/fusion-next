@@ -1,0 +1,5 @@
+# compat gate run 2026-11-11 19:25:15
+DSHX_HARNESS=/Users/baozipai/dsh/releases/0.1.6-alpha.2 (git 12a1f7c)
+DSHX_COMPACT_SAVIOUR=/Users/baozipai/dsh/插件/compat-fixtures/dsh-compact-saviour (npm dsh-compact-saviour@0.2.9, sha256: 8af6ab42f1e259afbd1def19588640aff23d4eef9fd7c8da1096a196f2969726)
+cmd: pnpm exec vitest run --config vitest.compat.config.mts
+result: compat-tests/session-routing.spec.ts 10/10 PASS (1 file, 1.15s)
