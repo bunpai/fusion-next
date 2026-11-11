@@ -26,23 +26,74 @@ import { json, readJson, trustedRequest } from './host/http.js'
 import { readFusionStatusAsync } from './host/status.js'
 import { readHistoricalFusionActivity } from './host/native-activity.js'
 import { nativeShellTool } from './host/shell.js'
+import { migrateFusionV2 } from './persistence/index.js'
+import { openRunManager, type RunManager } from './run-manager/index.js'
+import { SessionLifecycle } from './session/lifecycle.js'
+import { probeHostCapabilities } from './host-capabilities/index.js'
 
 export * from './index.js'
 
 export const name = 'dsh-model-fusion'
 export const inject = ['agents', 'sessions', 'llm', 'tools', 'subagents', 'systemPrompt', 'webServer', 'sessionController', 'sessionQuery', 'commands', 'agentDefaultModel', 'tokenMeter']
-export interface Config { profilePath?: string; authorizationPath?: string; databasePath?: string; workerTools?: string[] }
+export interface Config { profilePath?: string; authorizationPath?: string; databasePath?: string; workerTools?: string[]; lifecycleBridge?: boolean; hostSdkVersion?: string; fusionDatabasePath?: string }
 const defaultWorkerTools = [nativeShellTool, 'read', 'write', 'edit', 'glob', 'grep', 'job_output', 'job_kill']
 // Schemastery otherwise normalizes an omitted array to [], bypassing ?? below.
 // An explicitly empty list must remain empty, so the default belongs in the schema.
 export const Config: z<Config> = z.object({ profilePath: z.string(), authorizationPath: z.string(), databasePath: z.string(),
-  workerTools: z.array(z.string()).default(defaultWorkerTools) })
+  workerTools: z.array(z.string()).default(defaultWorkerTools),
+  lifecycleBridge: z.boolean().default(false), hostSdkVersion: z.string(), fusionDatabasePath: z.string() })
 
 export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   const dshHome = process.env.DSH_HOME || join(homedir(), '.dsh')
   const database = config.databasePath || join(dshHome, 'plugins', name, 'state.sqlite')
   if (!isAbsolute(database)) throw new Error('Fusion databasePath must be absolute')
   const store = new SqliteFusionStore(database), bindings = new BindingRepository(store)
+  // ---- B01–C01 lifecycle bridge (journal-backed Fusion activation) ------------
+  // The B02/B03 stack keeps its own additive v2 journal next to the legacy task
+  // store. Migration is explicit and idempotent; opening never migrates.
+  const fusionDatabase = config.fusionDatabasePath || join(dshHome, 'plugins', name, 'fusion-v2.sqlite')
+  if (!isAbsolute(fusionDatabase)) throw new Error('Fusion fusionDatabasePath must be absolute')
+  let lifecycleManager: RunManager | undefined
+  const capabilityReport = () => {
+    // Default is fail-closed: this plugin cannot certify Host fork/rebind
+    // semantics from the inside, so every mutation is denied with an explicit
+    // version error. lifecycleBridge=true records an explicit OPERATOR
+    // attestation for an unlisted Host version (caller-supplied, never
+    // host-certified; the rc.2 fence stays intact).
+    const attested = config.lifecycleBridge === true
+    return probeHostCapabilities({
+      sdkVersion: config.hostSdkVersion,
+      attested: attested || undefined,
+      observed: attested
+        ? {
+            sessionRead: true, sessionFork: true, forkLineage: true,
+            sessionRebind: true, rebindAtomic: true,
+            lifecycleEvents: true, lifecycleOrdering: true,
+            approvalRequest: true, approvalTurnOpen: true,
+            compactionControl: true, compactionTransaction: true,
+            effectObservation: true, effectOutcomeKnown: true, effectIdempotency: true,
+          }
+        : {},
+    })
+  }
+  const fusionLifecycle = (): SessionLifecycle => {
+    if (!lifecycleManager) {
+      migrateFusionV2(fusionDatabase)
+      lifecycleManager = openRunManager(fusionDatabase)
+    }
+    return new SessionLifecycle(lifecycleManager, capabilityReport())
+  }
+  const fusionActivate = (sessionId: string): void => {
+    // Deterministic per-session identities keep activation idempotent: an exact
+    // retry collapses into the already-committed journal events instead of
+    // duplicating runs, and any divergent interleaving fails the per-run CAS.
+    fusionLifecycle().activate(sessionId, {
+      kind: 'create',
+      taskId: `fusion-task-${sessionId}`,
+      budgetId: `fusion-budget-${sessionId}`,
+      mode: 'DIRECT',
+    })
+  }
   const cachePolicy = new CachePolicy(store)
   backfillHistory(store)
   const budget = new NativeRequestBudget(store, config.authorizationPath)
@@ -116,6 +167,11 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   ctx.effect(() => ctx.llm.registerAdapter([FUSION_PROVIDER], new FusionCatalogAdapter(leadInputModalities)))
   ctx.effect(() => installNativeFusionSelection(ctx, {
     coordinator: () => runtime, profile: () => defaultProfile,
+    // C01 activation seam: once a session commits to Fusion, the journal-backed
+    // lifecycle creates/restores the run + alias before the next model request.
+    // Fail-closed capability gating lives inside the adapter; a denied or
+    // failing activation surfaces as an explicit request error.
+    activate: fusionActivate,
     selection: agent => {
       const selection = agent.session.snapshotEvents().findLast(event => event.type === 'model/selection')
       if (selection?.type === 'model/selection') return selection.data

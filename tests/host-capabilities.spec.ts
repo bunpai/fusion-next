@@ -83,4 +83,21 @@ describe('input-only Host capability admission (simulated; no Host runtime attes
     expect(requireHostOperation(result, 'effects.replay').mode).toBe('full');
     expect(probeHostCapabilities(input({ ...complete.observed, effectOutcomeKnown: false })).operations['effects.replay'].allowed).toBe(false);
   });
+  it('operator attestation upgrades an unlisted version, with the rc.2 fence left intact', () => {
+    const attested = probeHostCapabilities({ sdkVersion: '0.2.2-rc.1', attested: true, observed: complete.observed });
+    expect(attested.versionTrack).toBe('operator-attested');
+    expect(attested.warnings.join(' ')).toMatch(/operator attestation/i);
+    expect(requireHostOperation(attested, 'lifecycle.transition').mode).toBe('full');
+    const unattested = probeHostCapabilities({ sdkVersion: '0.2.2-rc.1', observed: complete.observed });
+    expect(unattested.versionTrack).toBe('unknown');
+    expect(unattested.operations['lifecycle.transition'].allowed).toBe(false);
+    // A known-unverified Desktop runtime cannot be attested around.
+    const rc2Attested = probeHostCapabilities({ sdkVersion: '0.2.1-rc.2', attested: true, observed: complete.observed });
+    expect(rc2Attested.versionTrack).toBe('desktop-rc2');
+    expect(rc2Attested.operations['session.fork'].allowed).toBe(false);
+    // Attestation without the required observations still denies with prerequisites listed.
+    const thin = probeHostCapabilities({ attested: true, observed: {} });
+    expect(thin.operations['lifecycle.transition'].allowed).toBe(false);
+    expect(thin.operations['lifecycle.transition'].missing.length).toBeGreaterThan(0);
+  });
 });

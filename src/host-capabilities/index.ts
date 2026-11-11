@@ -8,6 +8,13 @@ export interface HostCapabilityInput {
   readonly sdkVersion?: string;
   /** Every flag must be explicitly verified by the caller; missing !== supported. */
   readonly observed: Readonly<Partial<Record<HostEvidence, boolean>>>;
+  /**
+   * Operator attestation for a Host version this gate does not list. Upgrades
+   * the unknown track to 'operator-attested' (mutation-eligible) while every
+   * claim stays caller-supplied and never host-certified. The rc.2 fence is
+   * hard: a known-unverified Desktop runtime cannot be attested around.
+   */
+  readonly attested?: boolean;
 }
 
 export type HostEvidence =
@@ -30,7 +37,7 @@ export interface HostAdmission {
   readonly reason: string;
 }
 export interface HostCapabilityReport {
-  readonly versionTrack: 'desktop-rc2' | 'sdk-rc5' | 'unknown';
+  readonly versionTrack: 'desktop-rc2' | 'sdk-rc5' | 'operator-attested' | 'unknown';
   readonly operations: Readonly<Record<HostOperation, HostAdmission>>;
   readonly warnings: readonly string[];
   /** This always remains simulated until a real Host integration independently verifies it. */
@@ -52,31 +59,37 @@ const REQUIRED: Readonly<Record<Exclude<HostOperation, 'session.inspect'>, reado
 // Never export this set or expose a report constructor.
 const issuedReports = new WeakSet<HostCapabilityReport>();
 
-/** Pure admission logic. rc2 and unknown versions never authorize mutations. */
+/** Pure admission logic. rc2 and unattested unknown versions never authorize mutations. */
 export function probeHostCapabilities(input: HostCapabilityInput): HostCapabilityReport {
   const versionTrack: HostCapabilityReport['versionTrack'] = input.sdkVersion === '0.2.1-rc.2'
     ? 'desktop-rc2'
-    : input.sdkVersion === '0.2.1-rc.5' ? 'sdk-rc5' : 'unknown';
+    : input.sdkVersion === '0.2.1-rc.5'
+      ? 'sdk-rc5'
+      : input.attested === true ? 'operator-attested' : 'unknown';
   const warnings: string[] = versionTrack === 'desktop-rc2'
     ? ['rc.2 packaged Desktop runtime is unverified; no fork/rebind semantics are certified.']
     : versionTrack === 'sdk-rc5'
       ? ['rc.5 SDK type declarations are not proof of Host runtime behavior.']
-      : ['Unknown/unsupported Host version: state mutations denied regardless of claimed features.'];
+      : versionTrack === 'operator-attested'
+        ? ['Operator attestation accepted for an unlisted Host version; every claim stays caller-supplied and is not host-certified.']
+        : ['Unknown/unsupported Host version: state mutations denied regardless of claimed features.'];
   const operations = {} as Record<HostOperation, HostAdmission>;
   operations['session.inspect'] = input.observed.sessionRead === true
     ? { allowed: true, mode: 'full', missing: [], reason: 'Read capability explicitly supplied.' }
     : { allowed: true, mode: 'degraded', missing: ['sessionRead'], reason: 'Metadata-only inspection; no Host session read or mutation.' };
   for (const [operation, required] of Object.entries(REQUIRED) as [Exclude<HostOperation, 'session.inspect'>, readonly HostEvidence[]][]) {
     const missing = required.filter((key) => input.observed[key] !== true);
-    // Only rc5 is eligible for modeled mutations. rc2 lacks verified behavioral guarantees;
-    // an input claiming every boolean still cannot override that hard version fence.
-    const allowed = missing.length === 0 && (versionTrack === 'sdk-rc5' || operation === 'effects.observe');
+    // Only rc5 and an explicit operator attestation are eligible for modeled
+    // mutations. rc2 lacks verified behavioral guarantees; an input claiming
+    // every boolean still cannot override that hard version fence.
+    const cleared = versionTrack === 'sdk-rc5' || versionTrack === 'operator-attested';
+    const allowed = missing.length === 0 && (cleared || operation === 'effects.observe');
     operations[operation] = {
       allowed,
       mode: allowed ? 'full' : 'denied',
       missing,
       reason: allowed ? 'All caller-supplied prerequisites satisfied; Host not certified.'
-        : versionTrack !== 'sdk-rc5' && operation !== 'effects.observe'
+        : !cleared && operation !== 'effects.observe'
           ? `Host SDK ${input.sdkVersion ?? '(not provided)'} is not cleared for mutation without runtime verification.`
           : `Missing verified prerequisites: ${missing.join(', ')}.`,
     };
