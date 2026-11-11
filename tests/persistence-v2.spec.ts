@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { afterEach, describe, expect, it } from 'vitest'
 import { SqliteFusionStore } from '../src/task/sqlite-store.js'
 import { created, TASK } from './helpers.js'
-import { migrateFusionV2, openFusionV2, FUSION_V2_TABLES } from '../src/persistence/index.js'
+import { migrateFusionV2, openFusionV2, restoreFusionV1FromBackup, FUSION_V2_TABLES } from '../src/persistence/index.js'
 
 const dirs: string[] = []
 const handles: DatabaseSync[] = []
@@ -94,6 +94,8 @@ describe('Fusion persistence v1 → v2 additive migration', () => {
     db.exec('PRAGMA user_version = 77')
     expect(() => migrateFusionV2(future)).toThrow(/version/i)
     expect(db.prepare('PRAGMA user_version').get()?.user_version).toBe(77)
+    expect(() => openFusionV2(future)).toThrow(/version/i)
+    expect(existsSync(future + '-wal')).toBe(false)
     const unversioned = dbPath()
     raw(unversioned).exec('CREATE TABLE alien (id TEXT)')
     expect(() => migrateFusionV2(unversioned)).toThrow(/unversioned/i)
@@ -120,6 +122,41 @@ describe('Fusion persistence v1 → v2 additive migration', () => {
     expect(db.prepare('SELECT count(*) AS count FROM fusion_events').get()?.count).toBe(1)
   })
 
+  it('rejects forged v2 versions with missing physical tables in both migration and open', () => {
+    const file = dbPath()
+    const db = raw(file)
+    db.exec('PRAGMA user_version = 2; CREATE TABLE fusion_runs (id TEXT PRIMARY KEY)')
+    expect(() => migrateFusionV2(file)).toThrow(/schema/i)
+    expect(() => openFusionV2(file)).toThrow(/schema/i)
+    expect(db.prepare('PRAGMA user_version').get()?.user_version).toBe(2)
+  })
+
+  it('restores verified v1 backup only with explicit offline consent and retains a diagnostic v2 snapshot', () => {
+    const file = dbPath()
+    const legacy = new SqliteFusionStore(file)
+    legacy.writeDocument('restore-me', 0, 'before')
+    legacy.close()
+    const backup = migrateFusionV2(file).backup!
+    expect(() => restoreFusionV1FromBackup(file, backup)).toThrow(/offline|consent|confirm/i)
+    symlinkSync(join(dirname(file), 'nonexistent-sidecar'), file + '-wal')
+    expect(() => restoreFusionV1FromBackup(file, backup, { confirmOfflineExclusive: true })).toThrow(/sidecar|offline/)
+    rmSync(file + '-wal')
+    const result = restoreFusionV1FromBackup(file, backup, { confirmOfflineExclusive: true })
+    expect(existsSync(result.v2Snapshot.path)).toBe(true)
+    const restored = raw(file)
+    expect(restored.prepare('PRAGMA user_version').get()?.user_version).toBe(1)
+    expect(restored.prepare('SELECT json FROM documents WHERE id=?').get('restore-me')?.json).toBe('"before"')
+  })
+
+  it('rejects backup tampering before restoring and leaves v2 intact', () => {
+    const file = dbPath()
+    const legacy = new SqliteFusionStore(file); legacy.close()
+    const backup = migrateFusionV2(file).backup!
+    expect(() => restoreFusionV1FromBackup(file, { ...backup, sha256: '0'.repeat(64) }, { confirmOfflineExclusive: true })).toThrow(/digest|hash|sha256/i)
+    const current = raw(file)
+    expect(current.prepare('PRAGMA user_version').get()?.user_version).toBe(2)
+  })
+
   it('refuses unsafe file locations and leaves existing v1 untouched if migration fails', () => {
     const file = dbPath()
     const legacy = new SqliteFusionStore(file); legacy.writeDocument('safe', 0, true); legacy.close()
@@ -132,5 +169,8 @@ describe('Fusion persistence v1 → v2 additive migration', () => {
     const dangling = dbPath()
     symlinkSync(join(dirname(dangling), 'nonexistent-target.sqlite'), dangling)
     expect(() => migrateFusionV2(dangling)).toThrow(/regular file/)
+    const sidecar = dbPath()
+    symlinkSync(join(dirname(sidecar), 'nonexistent-sidecar'), sidecar + '-wal')
+    expect(() => migrateFusionV2(sidecar)).toThrow(/unsafe SQLite sidecar/)
   })
 })

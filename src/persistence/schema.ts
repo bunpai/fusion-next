@@ -15,7 +15,7 @@ CREATE TABLE fusion_runs (
 );
 CREATE TABLE fusion_session_aliases (
   host_session_id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES fusion_runs(id),
-  selection_status TEXT NOT NULL, branch_id TEXT, fork_point_seq INTEGER,
+  selection_status TEXT NOT NULL, branch_id TEXT REFERENCES fusion_branch_lineage(branch_id) DEFERRABLE INITIALLY DEFERRED, fork_point_seq INTEGER,
   revision INTEGER NOT NULL CHECK (revision >= 0)
 );
 CREATE INDEX fusion_session_aliases_run ON fusion_session_aliases(run_id);
@@ -38,7 +38,7 @@ CREATE TABLE fusion_generations (
 CREATE INDEX fusion_generations_agent_status ON fusion_generations(agent_id, status);
 CREATE TABLE fusion_assignments (
   id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES fusion_runs(id),
-  brief_revision INTEGER NOT NULL, role TEXT NOT NULL, worker_id TEXT,
+  brief_revision INTEGER NOT NULL, role TEXT NOT NULL, worker_id TEXT REFERENCES fusion_agents(agent_id),
   status TEXT NOT NULL, write_scope_json TEXT NOT NULL
 );
 CREATE INDEX fusion_assignments_run_status ON fusion_assignments(run_id, status);

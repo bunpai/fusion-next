@@ -2,7 +2,9 @@ import { createHash, randomUUID } from 'node:crypto'
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, statSync, unlinkSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { FUSION_V2_SQL, FUSION_V2_TABLES } from './schema.js'
+import { FUSION_V2_SQL } from './schema.js'
+import { verifyV2Schema } from './verify.js'
+export { restoreFusionV1FromBackup } from './restore.js'
 
 export { FUSION_V2_TABLES } from './schema.js'
 export interface FusionMigrationResult { readonly migrated: boolean; readonly version: 2; readonly backup?: { readonly path: string; readonly sha256: string } }
@@ -26,6 +28,15 @@ function checkedPath(filename: string): string {
   }
   if (entry && (!entry.isFile() || entry.isSymbolicLink())) {
     throw new Error('Fusion v2 database path must be a regular file')
+  }
+  // SQLite creates -wal/-shm/-journal beside the DB. Do not follow attacker-owned links.
+  for (const suffix of ['-wal', '-shm', '-journal']) {
+    try {
+      const sidecar = lstatSync(safePath + suffix)
+      if (!sidecar.isFile() || sidecar.isSymbolicLink()) throw new Error(`unsafe SQLite sidecar ${suffix}`)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    }
   }
   return safePath
 }
@@ -77,9 +88,10 @@ export function migrateFusionV2(filename: string, options: FusionMigrationOption
   const path = checkedPath(filename)
   const db = new DatabaseSync(path)
   try {
-    db.exec('PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL;')
     const version = userVersion(db)
-    if (version === 2) { verify(db); return { migrated: false, version: 2 } }
+    // Read version before setting WAL: a future DB must not be changed even via sidecars.
+    db.exec('PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL;')
+    if (version === 2) { verify(db); verifyV2Schema(db); return { migrated: false, version: 2 } }
     if (version === 0) {
       const count = db.prepare("SELECT count(*) AS n FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").get()?.n
       if (count !== 0) throw new Error('unversioned nonempty Fusion database')
@@ -103,6 +115,7 @@ export function migrateFusionV2(filename: string, options: FusionMigrationOption
       db.exec('PRAGMA user_version = 2')
       options.beforeCommit?.()
       verify(db)
+      verifyV2Schema(db)
       db.exec('COMMIT')
       return { migrated: true, version: 2, ...(backup ? { backup } : {}) }
     } catch (error) {
@@ -118,8 +131,9 @@ export function openFusionV2(filename: string): DatabaseSync {
   if (!existsSync(path)) throw new Error('Fusion v2 database missing; call migrateFusionV2 first')
   const db = new DatabaseSync(path)
   try {
-    db.exec('PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL;')
     if (userVersion(db) !== 2) throw new Error('Fusion v2 database required')
+    verifyV2Schema(db)
+    db.exec('PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL;')
     return db
   } catch (error) { db.close(); throw error }
 }
