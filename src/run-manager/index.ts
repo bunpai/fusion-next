@@ -172,6 +172,15 @@ export class RunManager {
       worktreeRows.run(worktree.worktreeId, worktree.runId, null, worktree.baseCommit, worktree.path,
         worktree.state, worktree.mergeCommit ?? null, worktree.rollbackRef ?? null)
     }
+    const evidenceRows = this.db.prepare(`INSERT INTO fusion_evidence (evidence_id, run_id, requirement_id, source, command, exit_code, artifact_digest, verdict, produced_at)
+      VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(evidence_id) DO UPDATE SET
+      source=excluded.source, command=excluded.command, exit_code=excluded.exit_code,
+      artifact_digest=excluded.artifact_digest, verdict=excluded.verdict, produced_at=excluded.produced_at`)
+    for (const item of Object.values(state.evidence)) {
+      const verdict = state.requirements[item.requirementId]?.verdict ?? 'NOT_VERIFIED'
+      evidenceRows.run(item.evidenceId, item.runId, item.requirementId, item.source, item.command ?? null,
+        item.exitCode ?? null, item.artifactDigest ?? null, verdict, Date.now())
+    }
     const budgets = this.db.prepare(`INSERT INTO fusion_budgets (budget_id, hard_cost, max_calls, max_retries, spent, reserved, approval_id)
       VALUES (?,?,?,?,?,?,?) ON CONFLICT(budget_id) DO UPDATE SET
       hard_cost=excluded.hard_cost, max_calls=excluded.max_calls, max_retries=excluded.max_retries,

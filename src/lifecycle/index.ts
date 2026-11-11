@@ -134,6 +134,17 @@ export interface WorktreeRecord {
   state: 'ACTIVE' | 'MERGED' | 'ROLLED_BACK' | 'RELEASED'
   mergeCommit?: string; mergeDigest?: string; rollbackRef?: string
 }
+export type EvidenceLevel = 'E0' | 'E1' | 'E2' | 'E3'
+export type VerificationVerdict = 'NOT_VERIFIED' | 'VERIFIED' | 'FAILED_VERIFICATION'
+export interface EvidenceRecord {
+  evidenceId: string; runId: FusionRunId; requirementId: string; level: EvidenceLevel
+  source: string; command?: string; exitCode?: number; artifactDigest?: string
+  producerGenerationId: AgentGenerationId
+}
+export interface RequirementRecord {
+  requirementId: string; runId: FusionRunId
+  evidenceIds: readonly string[]; verdict: VerificationVerdict; verifiedBy?: AgentGenerationId
+}
 type EffectIntent = {
   type: 'EFFECT_INTENT_RECORDED'; runId: FusionRunId; effectId: string
   generationId: AgentGenerationId; toolCallId: string; effectClass: EffectClass
@@ -226,6 +237,15 @@ type WorktreeMerged = { type: 'WORKTREE_MERGED'; runId: FusionRunId; worktreeId:
 type WorktreeRolledBack = { type: 'WORKTREE_ROLLED_BACK'; runId: FusionRunId; worktreeId: string; reason: string }
 type WorktreeReleased = { type: 'WORKTREE_RELEASED'; runId: FusionRunId; worktreeId: string }
 type WorktreeEvents = WorktreeAcquired | WorktreeMerged | WorktreeRolledBack | WorktreeReleased
+type EvidenceRecorded = {
+  type: 'EVIDENCE_RECORDED'; runId: FusionRunId; evidenceId: string; requirementId: string
+  level: EvidenceLevel; source: string; command?: string; exitCode?: number; artifactDigest?: string
+  producerGenerationId: AgentGenerationId
+}
+type VerificationRecorded = {
+  type: 'VERIFICATION_RECORDED'; runId: FusionRunId; requirementId: string; evidenceId: string
+  verifierGenerationId: AgentGenerationId; verdict: Exclude<VerificationVerdict, 'NOT_VERIFIED'> | 'NOT_VERIFIED'
+}
 type AuthorityIssued = {
   type: 'AUTHORITY_ISSUED'; runId: FusionRunId; generationId: AgentGenerationId
   toolScope: string[]; writePaths: string[]; approvalRequired: string[]
@@ -240,7 +260,7 @@ type TransitionRolledBack = { type: 'TRANSITION_ROLLED_BACK'; runId: FusionRunId
 type TransitionEvents = TransitionCheckpointed | TransitionCommitted | TransitionRolledBack
 
 export type LifecycleEvent = { readonly schemaVersion: 1; readonly eventId: string; readonly seq: number; readonly expectedRevision: number } &
-  (Created | Forked | Bound | RunChange | Prepared | GenerationChange | SwitchCommitted | EffectIntent | EffectTransition | TransitionEvents | AuthorityIssued | AssignmentCreated | AssignmentBriefRevised | AssignmentReported | AssignmentCompleted | AssignmentFailed | AssignmentTakeover | AssignmentDependencyDeclared | AssignmentFilesClaimed | WorktreeEvents | ContextCheckpointed | BudgetReserved | BudgetCallReserved | BudgetReservationSettled | BudgetOverrunApproved | CacheEntryRecorded | CacheKeepaliveTick | CacheKeepaliveStopped | DelegationOutcomeRecorded)
+  (Created | Forked | Bound | RunChange | Prepared | GenerationChange | SwitchCommitted | EffectIntent | EffectTransition | TransitionEvents | AuthorityIssued | AssignmentCreated | AssignmentBriefRevised | AssignmentReported | AssignmentCompleted | AssignmentFailed | AssignmentTakeover | AssignmentDependencyDeclared | AssignmentFilesClaimed | WorktreeEvents | EvidenceRecorded | VerificationRecorded | ContextCheckpointed | BudgetReserved | BudgetCallReserved | BudgetReservationSettled | BudgetOverrunApproved | CacheEntryRecorded | CacheKeepaliveTick | CacheKeepaliveStopped | DelegationOutcomeRecorded)
 export interface LifecycleState {
   readonly revision: number
   readonly seq: number
@@ -254,6 +274,8 @@ export interface LifecycleState {
   readonly assignments: Readonly<Record<string, AssignmentRecord>>
   readonly reports: Readonly<Record<string, AgentReportRecord>>
   readonly worktrees: Readonly<Record<string, WorktreeRecord>>
+  readonly evidence: Readonly<Record<string, EvidenceRecord>>
+  readonly requirements: Readonly<Record<string, RequirementRecord>>
   readonly budgets: Readonly<Record<string, BudgetRecord>>
   readonly caches: Readonly<Record<string, CacheEntryRecord>>
   readonly delegation: Readonly<Record<'DIRECT' | 'DELEGATE', DelegationStats>>
@@ -272,7 +294,7 @@ function deepFreeze<T>(value: T): T {
 const stable = (value: unknown): string => JSON.stringify(value, (_key, item: unknown) =>
   item && typeof item === 'object' && !Array.isArray(item)
     ? Object.fromEntries(Object.entries(item as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b))) : item)
-export const emptyLifecycleState = (): LifecycleState => deepFreeze({ revision: 0, seq: 0, runs: dictionary(), aliases: dictionary(), generations: dictionary(), lineage: dictionary(), effects: dictionary(), transitions: dictionary(), authorities: dictionary(), assignments: dictionary(), reports: dictionary(), worktrees: dictionary(), checkpoints: dictionary(), budgets: dictionary(), caches: dictionary(), delegation: { DIRECT: { attempts: 0, failures: 0, spentMicros: 0 }, DELEGATE: { attempts: 0, failures: 0, spentMicros: 0 } }, appliedEvents: dictionary() })
+export const emptyLifecycleState = (): LifecycleState => deepFreeze({ revision: 0, seq: 0, runs: dictionary(), aliases: dictionary(), generations: dictionary(), lineage: dictionary(), effects: dictionary(), transitions: dictionary(), authorities: dictionary(), assignments: dictionary(), reports: dictionary(), worktrees: dictionary(), evidence: dictionary(), requirements: dictionary(), checkpoints: dictionary(), budgets: dictionary(), caches: dictionary(), delegation: { DIRECT: { attempts: 0, failures: 0, spentMicros: 0 }, DELEGATE: { attempts: 0, failures: 0, spentMicros: 0 } }, appliedEvents: dictionary() })
 const invalid = (reason: string): never => { throw new Error(`lifecycle conflict: ${reason}`) }
 function assert(condition: unknown, reason: string): asserts condition { if (!condition) invalid(reason) }
 function requireCache(caches: Record<string, CacheEntryRecord>, key: string): CacheEntryRecord {
@@ -315,7 +337,7 @@ export function reduceLifecycle(state: LifecycleState, event: LifecycleEvent): L
   }
   assert(event.seq === state.seq + 1, `out-of-order seq: expected ${state.seq + 1}`)
   assert(event.expectedRevision === state.revision, `stale revision: expected ${state.revision}`)
-  const runs = dictionary(state.runs), aliases = dictionary(state.aliases), generations = dictionary(state.generations), lineage = dictionary(state.lineage), effects = dictionary(state.effects), transitions = dictionary(state.transitions), authorities = dictionary(state.authorities), assignments = dictionary(state.assignments), reports = dictionary(state.reports), worktrees = dictionary(state.worktrees), checkpoints = dictionary(state.checkpoints), budgets = dictionary(state.budgets), caches = dictionary(state.caches), delegation = { DIRECT: { ...state.delegation.DIRECT }, DELEGATE: { ...state.delegation.DELEGATE } }
+  const runs = dictionary(state.runs), aliases = dictionary(state.aliases), generations = dictionary(state.generations), lineage = dictionary(state.lineage), effects = dictionary(state.effects), transitions = dictionary(state.transitions), authorities = dictionary(state.authorities), assignments = dictionary(state.assignments), reports = dictionary(state.reports), worktrees = dictionary(state.worktrees), evidence = dictionary(state.evidence), requirements = dictionary(state.requirements), checkpoints = dictionary(state.checkpoints), budgets = dictionary(state.budgets), caches = dictionary(state.caches), delegation = { DIRECT: { ...state.delegation.DIRECT }, DELEGATE: { ...state.delegation.DELEGATE } }
   const current = runs[event.runId]
   const requireRun = (): FusionRun => current ?? invalid('unknown run')
   const requireEffect = (effectId: string): EffectRecord => effects[effectId] ?? invalid('unknown effect')
@@ -696,6 +718,36 @@ export function reduceLifecycle(state: LifecycleState, event: LifecycleEvent): L
       changeRun({})
       break
     }
+    case 'EVIDENCE_RECORDED': {
+      assert(!evidence[event.evidenceId], 'evidence id already exists')
+      requireRun()
+      assert(event.requirementId.length > 0, 'evidence requirement required')
+      assert(event.source.length > 0, 'evidence source required')
+      assert(event.level === 'E0' || event.level === 'E1' || event.level === 'E2' || event.level === 'E3', 'unknown evidence level')
+      assert((event.level === 'E2' || event.level === 'E3') ? (event.artifactDigest !== undefined && event.artifactDigest.length > 0) : true, 'E2/E3 evidence requires an artifact digest')
+      assert(event.exitCode === undefined || Number.isSafeInteger(event.exitCode), 'invalid evidence exit code')
+      assert(generations[event.producerGenerationId]?.runId === event.runId, 'evidence producer generation mismatch')
+      evidence[event.evidenceId] = { evidenceId: event.evidenceId, runId: event.runId, requirementId: event.requirementId,
+        level: event.level, source: event.source, command: event.command, exitCode: event.exitCode,
+        artifactDigest: event.artifactDigest, producerGenerationId: event.producerGenerationId }
+      const existing = requirements[event.requirementId]
+      requirements[event.requirementId] = existing
+        ? { ...existing, evidenceIds: existing.evidenceIds.includes(event.evidenceId) ? existing.evidenceIds : [...existing.evidenceIds, event.evidenceId] }
+        : { requirementId: event.requirementId, runId: event.runId, evidenceIds: [event.evidenceId], verdict: 'NOT_VERIFIED' as const }
+      changeRun({})
+      break
+    }
+    case 'VERIFICATION_RECORDED': {
+      const record = requirements[event.requirementId]
+      assert(record !== undefined && record.runId === event.runId, 'unknown requirement')
+      const item = evidence[event.evidenceId]
+      assert(item !== undefined && item.requirementId === event.requirementId, 'verification evidence mismatch')
+      assert(item.producerGenerationId !== event.verifierGenerationId, 'verification must be independent')
+      assert(generations[event.verifierGenerationId]?.runId === event.runId, 'verification generation mismatch')
+      requirements[event.requirementId] = { ...record, verdict: event.verdict, verifiedBy: event.verifierGenerationId }
+      changeRun({})
+      break
+    }
     case 'CONTEXT_CHECKPOINTED': {
       assert(!checkpoints[event.checkpointId], 'checkpoint id already exists')
       const generation = generations[event.generationId]
@@ -833,7 +885,7 @@ export function reduceLifecycle(state: LifecycleState, event: LifecycleEvent): L
     }
     default: invalid('unknown event type')
   }
-  return deepFreeze({ revision: state.revision + 1, seq: event.seq, runs, aliases, generations, lineage, effects, transitions, authorities, assignments, reports, worktrees, checkpoints, budgets, caches, delegation,
+  return deepFreeze({ revision: state.revision + 1, seq: event.seq, runs, aliases, generations, lineage, effects, transitions, authorities, assignments, reports, worktrees, evidence, requirements, checkpoints, budgets, caches, delegation,
     appliedEvents: dictionary({ ...state.appliedEvents, [event.eventId]: fingerprint }) })
 }
 export function replayLifecycle(events: readonly LifecycleEvent[], initial = emptyLifecycleState()): LifecycleState {
