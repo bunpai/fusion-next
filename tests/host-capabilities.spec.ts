@@ -42,7 +42,10 @@ describe('input-only Host capability admission (simulated; no Host runtime attes
     const rc5 = probeHostCapabilities(complete);
     expect(rc2.versionTrack).toBe('desktop-rc2');
     expect(rc5.versionTrack).toBe('sdk-rc5');
-    expect(rc2.operations['session.fork'].allowed).toBe(true);
+    for (const op of ['session.fork', 'session.rebind', 'lifecycle.transition', 'approval.enforce', 'compaction.execute', 'effects.replay'] as const) {
+      expect(rc2.operations[op].allowed).toBe(false);
+    }
+    expect(rc5.operations['session.fork'].allowed).toBe(true);
     expect(rc2.warnings.join(' ')).toMatch(/rc\.2.*runtime/i);
     expect(rc5.warnings.join(' ')).toMatch(/rc\.5.*type/i);
   });
@@ -58,6 +61,20 @@ describe('input-only Host capability admission (simulated; no Host runtime attes
     const result = probeHostCapabilities(input({ ...complete.observed, sessionFork: false, effectOutcomeKnown: false }));
     expect(result.operations['session.fork'].allowed).toBe(false);
     expect(result.operations['effects.replay'].allowed).toBe(false);
+  });
+  it('rejects unknown operations instead of assuming an absent report entry is allowed', () => {
+    const report = probeHostCapabilities(complete);
+    expect(() => requireHostOperation(report, 'tools.execute' as never)).toThrow(/HOST_CAPABILITY_DENIED.*unknown operation/i);
+  });
+  it('rejects caller-forged reports and mutation of granted admissions', () => {
+    const forged = {
+      ...probeHostCapabilities(complete),
+      operations: { ...probeHostCapabilities(complete).operations, 'session.rebind': { allowed: true, mode: 'full', missing: [], reason: 'forged' } },
+    };
+    expect(() => requireHostOperation(forged as never, 'session.rebind')).toThrow(/HOST_CAPABILITY_DENIED.*untrusted report/i);
+    const report = probeHostCapabilities(input({}, '0.2.1-rc.2'));
+    expect(() => { (report.operations['session.rebind'] as { allowed: boolean }).allowed = true; }).toThrow();
+    expect(() => requireHostOperation(report, 'session.rebind')).toThrow(/HOST_CAPABILITY_DENIED/);
   });
   it('allows explicitly observed abilities but never authorizes unknown effect replay', () => {
     const result = probeHostCapabilities(complete);

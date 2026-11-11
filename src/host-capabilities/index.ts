@@ -48,7 +48,11 @@ const REQUIRED: Readonly<Record<Exclude<HostOperation, 'session.inspect'>, reado
   'effects.replay': ['effectObservation', 'effectOutcomeKnown', 'effectIdempotency'],
 };
 
-/** Pure admission logic. Unknown versions never authorize state mutations. */
+// Opaque report identity: structural casts or JSON-deserialized claims cannot authorize operations.
+// Never export this set or expose a report constructor.
+const issuedReports = new WeakSet<HostCapabilityReport>();
+
+/** Pure admission logic. rc2 and unknown versions never authorize mutations. */
 export function probeHostCapabilities(input: HostCapabilityInput): HostCapabilityReport {
   const versionTrack: HostCapabilityReport['versionTrack'] = input.sdkVersion === '0.2.1-rc.2'
     ? 'desktop-rc2'
@@ -64,22 +68,36 @@ export function probeHostCapabilities(input: HostCapabilityInput): HostCapabilit
     : { allowed: true, mode: 'degraded', missing: ['sessionRead'], reason: 'Metadata-only inspection; no Host session read or mutation.' };
   for (const [operation, required] of Object.entries(REQUIRED) as [Exclude<HostOperation, 'session.inspect'>, readonly HostEvidence[]][]) {
     const missing = required.filter((key) => input.observed[key] !== true);
-    const allowed = missing.length === 0 && (versionTrack !== 'unknown' || operation === 'effects.observe');
+    // Only rc5 is eligible for modeled mutations. rc2 lacks verified behavioral guarantees;
+    // an input claiming every boolean still cannot override that hard version fence.
+    const allowed = missing.length === 0 && (versionTrack === 'sdk-rc5' || operation === 'effects.observe');
     operations[operation] = {
       allowed,
       mode: allowed ? 'full' : 'denied',
       missing,
       reason: allowed ? 'All caller-supplied prerequisites satisfied; Host not certified.'
-        : versionTrack === 'unknown' && operation !== 'effects.observe'
-          ? `Unsupported Host SDK version: ${input.sdkVersion ?? '(not provided)'}.`
+        : versionTrack !== 'sdk-rc5' && operation !== 'effects.observe'
+          ? `Host SDK ${input.sdkVersion ?? '(not provided)'} is not cleared for mutation without runtime verification.`
           : `Missing verified prerequisites: ${missing.join(', ')}.`,
     };
   }
-  return { versionTrack, operations, warnings, evidenceLevel: 'caller-supplied-not-host-certified' };
+  for (const admission of Object.values(operations)) {
+    Object.freeze(admission.missing);
+    Object.freeze(admission);
+  }
+  Object.freeze(operations);
+  Object.freeze(warnings);
+  const report: HostCapabilityReport = Object.freeze({ versionTrack, operations, warnings, evidenceLevel: 'caller-supplied-not-host-certified' });
+  issuedReports.add(report);
+  return report;
 }
 
 /** Explicit refusal; callers must not interpret a denied operation as a successful no-op. */
 export function requireHostOperation(report: HostCapabilityReport, operation: HostOperation): HostAdmission {
+  if (!report || !issuedReports.has(report)) throw new Error('HOST_CAPABILITY_DENIED: untrusted report');
+  if (!Object.prototype.hasOwnProperty.call(report.operations, operation)) {
+    throw new Error(`HOST_CAPABILITY_DENIED: unknown operation [${String(operation)}]`);
+  }
   const admission = report.operations[operation];
   if (!admission.allowed) throw new Error(`HOST_CAPABILITY_DENIED [${operation}]: ${admission.reason}`);
   return admission;
