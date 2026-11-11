@@ -152,6 +152,17 @@ export class RunManager {
       effects.run(effect.effectId, effect.runId, effect.generationId, effect.toolCallId, effect.fingerprint,
         effect.state, effect.receiptRef ?? null, effect.idempotencyKey)
     }
+    const transitions = this.db.prepare(`INSERT INTO fusion_transitions (id, run_id, agent_id, from_gen, to_gen, phase, expected_revision, error, created_at, updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?)
+      ON CONFLICT(id) DO UPDATE SET from_gen=excluded.from_gen,to_gen=excluded.to_gen,phase=excluded.phase,error=excluded.error,updated_at=excluded.updated_at`)
+    const generationExists = this.db.prepare('SELECT 1 FROM fusion_generations WHERE id = ?')
+    for (const transition of Object.values(state.transitions)) {
+      // The replacement generation may not exist yet at CHECKPOINTED time; the FK on to_gen is
+      // satisfied with NULL until the prepare step projects it (later appends backfill the id).
+      const toGen = generationExists.get(transition.toGenerationId) !== undefined ? transition.toGenerationId : null
+      transitions.run(transition.transitionId, transition.runId, transition.agentId, transition.fromGenerationId,
+        toGen, transition.phase, transition.expectedRevision, transition.error ?? null, Date.now(), Date.now())
+    }
   }
   close(): void { if (!this.closed) { this.db.close(); this.closed = true } }
 }

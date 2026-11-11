@@ -119,6 +119,16 @@ export class GenerationService {
     return { from: fromGenerationId, to: to.generationId }
   }
 
+  /** Commit-only step of a transition: atomically retires the drained source and activates the
+   * prepared replacement in ONE journal event. Used by the D03 transition manager so the commit
+   * step can crash and resume independently of the drain/prepare steps. */
+  commitSwitch(runId: FusionRunId, fromGenerationId: AgentGenerationId, toGenerationId: AgentGenerationId): void {
+    requireHostOperation(this.report, 'lifecycle.transition')
+    const run = this.requireRun(runId)
+    this.append({ schemaVersion: 1, eventId: `fusion/generation-switch/${fromGenerationId}/to-${toGenerationId}/r${run.revision}`,
+      type: 'GENERATION_SWITCH_COMMITTED', runId, fromGenerationId, toGenerationId } as RunEventInput, run.revision)
+  }
+
   /** Tool/token callback delivery for the CURRENT generation; stale callbacks are fenced below. */
   callback(runId: FusionRunId, generationId: AgentGenerationId): void {
     requireHostOperation(this.report, 'lifecycle.transition')

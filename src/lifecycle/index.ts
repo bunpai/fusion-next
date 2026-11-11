@@ -91,6 +91,13 @@ export interface EffectRecord {
   readonly outcome?: 'SUCCEEDED' | 'FAILED_KNOWN'
   readonly resolvedBy?: 'receipt' | 'reconcile'
 }
+export type TransitionMode = 'MANUAL' | 'AUTO_UPGRADE' | 'AUTO_DOWNGRADE' | 'CROSS_PROVIDER'
+export type TransitionPhaseState = 'CHECKPOINTED' | 'COMMITTED' | 'ROLLED_BACK'
+export interface TransitionRecord {
+  transitionId: string; runId: FusionRunId; agentId: string; mode: TransitionMode
+  fromGenerationId: AgentGenerationId; toGenerationId: AgentGenerationId
+  phase: TransitionPhaseState; expectedRevision: number; error?: string
+}
 type EffectIntent = {
   type: 'EFFECT_INTENT_RECORDED'; runId: FusionRunId; effectId: string
   generationId: AgentGenerationId; toolCallId: string; effectClass: EffectClass
@@ -102,8 +109,16 @@ type EffectTransition = {
   receiptRef?: string; outcome?: 'SUCCEEDED' | 'FAILED_KNOWN'
 }
 /** Internal projected domain events, NOT discovered or promised Host SDK events. */
+type TransitionCheckpointed = {
+  type: 'TRANSITION_CHECKPOINTED'; runId: FusionRunId; transitionId: string; agentId: string
+  mode: TransitionMode; fromGenerationId: AgentGenerationId; toGenerationId: AgentGenerationId
+}
+type TransitionCommitted = { type: 'TRANSITION_COMMITTED'; runId: FusionRunId; transitionId: string }
+type TransitionRolledBack = { type: 'TRANSITION_ROLLED_BACK'; runId: FusionRunId; transitionId: string; error?: string }
+type TransitionEvents = TransitionCheckpointed | TransitionCommitted | TransitionRolledBack
+
 export type LifecycleEvent = { readonly schemaVersion: 1; readonly eventId: string; readonly seq: number; readonly expectedRevision: number } &
-  (Created | Forked | Bound | RunChange | Prepared | GenerationChange | SwitchCommitted | EffectIntent | EffectTransition)
+  (Created | Forked | Bound | RunChange | Prepared | GenerationChange | SwitchCommitted | EffectIntent | EffectTransition | TransitionEvents)
 export interface LifecycleState {
   readonly revision: number
   readonly seq: number
@@ -112,6 +127,7 @@ export interface LifecycleState {
   readonly generations: Readonly<Record<string, AgentGeneration>>
   readonly lineage: Readonly<Record<string, BranchLineage>>
   readonly effects: Readonly<Record<string, EffectRecord>>
+  readonly transitions: Readonly<Record<string, TransitionRecord>>
   /** Event id -> canonical payload; replay duplicate with differing payload is a conflict. */
   readonly appliedEvents: Readonly<Record<string, string>>
 }
@@ -126,7 +142,7 @@ function deepFreeze<T>(value: T): T {
 const stable = (value: unknown): string => JSON.stringify(value, (_key, item: unknown) =>
   item && typeof item === 'object' && !Array.isArray(item)
     ? Object.fromEntries(Object.entries(item as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b))) : item)
-export const emptyLifecycleState = (): LifecycleState => deepFreeze({ revision: 0, seq: 0, runs: dictionary(), aliases: dictionary(), generations: dictionary(), lineage: dictionary(), effects: dictionary(), appliedEvents: dictionary() })
+export const emptyLifecycleState = (): LifecycleState => deepFreeze({ revision: 0, seq: 0, runs: dictionary(), aliases: dictionary(), generations: dictionary(), lineage: dictionary(), effects: dictionary(), transitions: dictionary(), appliedEvents: dictionary() })
 const invalid = (reason: string): never => { throw new Error(`lifecycle conflict: ${reason}`) }
 function assert(condition: unknown, reason: string): asserts condition { if (!condition) invalid(reason) }
 
@@ -141,7 +157,7 @@ export function reduceLifecycle(state: LifecycleState, event: LifecycleEvent): L
   }
   assert(event.seq === state.seq + 1, `out-of-order seq: expected ${state.seq + 1}`)
   assert(event.expectedRevision === state.revision, `stale revision: expected ${state.revision}`)
-  const runs = dictionary(state.runs), aliases = dictionary(state.aliases), generations = dictionary(state.generations), lineage = dictionary(state.lineage), effects = dictionary(state.effects)
+  const runs = dictionary(state.runs), aliases = dictionary(state.aliases), generations = dictionary(state.generations), lineage = dictionary(state.lineage), effects = dictionary(state.effects), transitions = dictionary(state.transitions)
   const current = runs[event.runId]
   const requireRun = (): FusionRun => current ?? invalid('unknown run')
   const requireEffect = (effectId: string): EffectRecord => effects[effectId] ?? invalid('unknown effect')
@@ -329,9 +345,45 @@ export function reduceLifecycle(state: LifecycleState, event: LifecycleEvent): L
       changeRun({})
       break
     }
+    case 'TRANSITION_CHECKPOINTED': {
+      // The transition marker is journaled BEFORE any generation mutation: it is the durable
+      // intent record every later step resumes from.
+      assert(event.transitionId.length > 0 && !event.transitionId.includes('\u0000'), 'invalid transition id')
+      assert(!transitions[event.transitionId], 'transition id already exists')
+      const target = requireRun()
+      assert(target.agentIds.includes(event.agentId), 'transition agent not in run')
+      assert(generations[event.fromGenerationId]?.runId === event.runId, 'transition source generation mismatch')
+      assert(event.toGenerationId !== event.fromGenerationId, 'transition target equals source')
+      assert(event.mode === 'MANUAL' || event.mode === 'AUTO_UPGRADE' || event.mode === 'AUTO_DOWNGRADE' || event.mode === 'CROSS_PROVIDER', 'unknown transition mode')
+      transitions[event.transitionId] = { transitionId: event.transitionId, runId: event.runId, agentId: event.agentId,
+        mode: event.mode, fromGenerationId: event.fromGenerationId, toGenerationId: event.toGenerationId,
+        phase: 'CHECKPOINTED', expectedRevision: event.expectedRevision }
+      changeRun({})
+      break
+    }
+    case 'TRANSITION_COMMITTED': {
+      const record = transitions[event.transitionId]
+      assert(record && record.runId === event.runId, 'unknown transition')
+      assert(record.phase === 'CHECKPOINTED', 'transition already finalized')
+      const replacement = generations[record.toGenerationId]
+      const target = runs[record.runId]
+      assert(replacement !== undefined && replacement.status === 'ACTIVE' && replacement.agentId === record.agentId, 'transition commit without active replacement generation')
+      assert(target !== undefined && target.currentGenerationIds[record.agentId] === record.toGenerationId, 'transition commit without current replacement')
+      transitions[event.transitionId] = { ...record, phase: 'COMMITTED' }
+      changeRun({})
+      break
+    }
+    case 'TRANSITION_ROLLED_BACK': {
+      const record = transitions[event.transitionId]
+      assert(record && record.runId === event.runId, 'unknown transition')
+      assert(record.phase !== 'COMMITTED', 'committed transition cannot roll back')
+      transitions[event.transitionId] = { ...record, phase: 'ROLLED_BACK', error: event.error }
+      changeRun({})
+      break
+    }
     default: invalid('unknown event type')
   }
-  return deepFreeze({ revision: state.revision + 1, seq: event.seq, runs, aliases, generations, lineage, effects,
+  return deepFreeze({ revision: state.revision + 1, seq: event.seq, runs, aliases, generations, lineage, effects, transitions,
     appliedEvents: dictionary({ ...state.appliedEvents, [event.eventId]: fingerprint }) })
 }
 export function replayLifecycle(events: readonly LifecycleEvent[], initial = emptyLifecycleState()): LifecycleState {
