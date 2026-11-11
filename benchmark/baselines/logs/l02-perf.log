@@ -1,0 +1,14 @@
+
+ RUN  v4.1.11 /Users/baozipai/dsh/插件/fusion-next-source-review
+
+stdout | tests/l02-release.spec.ts > L02 fault injection, performance smoke and security audit > holds the pure-reducer and journal-append performance floor on this machine
+[l02-perf] pure reducer: 5000 events in 5336ms; journal appends: 400 in 5727ms (14.32ms/append)
+
+ ✓ tests/l02-release.spec.ts (4 tests) 11140ms
+     ✓ holds the pure-reducer and journal-append performance floor on this machine  11072ms
+
+ Test Files  1 passed (1)
+      Tests  4 passed (4)
+   Start at  17:13:40
+   Duration  11.31s (transform 48ms, setup 0ms, import 62ms, tests 11.14s, environment 0ms)
+
