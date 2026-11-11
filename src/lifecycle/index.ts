@@ -119,6 +119,8 @@ export interface AssignmentRecord {
   takenBy?: string; takenReason?: string
   /** H01: DAG dependencies (sorted, acyclic) and currently-held file claims (released on finalize). */
   dependsOn: readonly string[]; claimedPaths: readonly string[]
+  /** I02: latest Lead arbitration ruling (last one wins, journaled per event). */
+  arbitration?: { ruling: 'REWORK' | 'ACCEPT' | 'ESCALATE'; by: AgentGenerationId; reason: string }
 }
 export interface AgentReportRecord {
   reportId: string; runId: FusionRunId; assignmentId: string; generationId: AgentGenerationId
@@ -237,6 +239,14 @@ type WorktreeMerged = { type: 'WORKTREE_MERGED'; runId: FusionRunId; worktreeId:
 type WorktreeRolledBack = { type: 'WORKTREE_ROLLED_BACK'; runId: FusionRunId; worktreeId: string; reason: string }
 type WorktreeReleased = { type: 'WORKTREE_RELEASED'; runId: FusionRunId; worktreeId: string }
 type WorktreeEvents = WorktreeAcquired | WorktreeMerged | WorktreeRolledBack | WorktreeReleased
+type AssignmentArbitrated = {
+  type: 'ASSIGNMENT_ARBITRATED'; runId: FusionRunId; assignmentId: string
+  arbiterGenerationId: AgentGenerationId; ruling: 'REWORK' | 'ACCEPT' | 'ESCALATE'; reason: string
+}
+type ReworkOrdered = {
+  type: 'REWORK_ORDERED'; runId: FusionRunId; assignmentId: string
+  tier: 'MINOR' | 'MAJOR' | 'BLOCKER'; addedConstraints: string[]
+}
 type EvidenceRecorded = {
   type: 'EVIDENCE_RECORDED'; runId: FusionRunId; evidenceId: string; requirementId: string
   level: EvidenceLevel; source: string; command?: string; exitCode?: number; artifactDigest?: string
@@ -260,7 +270,7 @@ type TransitionRolledBack = { type: 'TRANSITION_ROLLED_BACK'; runId: FusionRunId
 type TransitionEvents = TransitionCheckpointed | TransitionCommitted | TransitionRolledBack
 
 export type LifecycleEvent = { readonly schemaVersion: 1; readonly eventId: string; readonly seq: number; readonly expectedRevision: number } &
-  (Created | Forked | Bound | RunChange | Prepared | GenerationChange | SwitchCommitted | EffectIntent | EffectTransition | TransitionEvents | AuthorityIssued | AssignmentCreated | AssignmentBriefRevised | AssignmentReported | AssignmentCompleted | AssignmentFailed | AssignmentTakeover | AssignmentDependencyDeclared | AssignmentFilesClaimed | WorktreeEvents | EvidenceRecorded | VerificationRecorded | ContextCheckpointed | BudgetReserved | BudgetCallReserved | BudgetReservationSettled | BudgetOverrunApproved | CacheEntryRecorded | CacheKeepaliveTick | CacheKeepaliveStopped | DelegationOutcomeRecorded)
+  (Created | Forked | Bound | RunChange | Prepared | GenerationChange | SwitchCommitted | EffectIntent | EffectTransition | TransitionEvents | AuthorityIssued | AssignmentCreated | AssignmentBriefRevised | AssignmentReported | AssignmentCompleted | AssignmentFailed | AssignmentTakeover | AssignmentDependencyDeclared | AssignmentFilesClaimed | WorktreeEvents | EvidenceRecorded | VerificationRecorded | AssignmentArbitrated | ReworkOrdered | ContextCheckpointed | BudgetReserved | BudgetCallReserved | BudgetReservationSettled | BudgetOverrunApproved | CacheEntryRecorded | CacheKeepaliveTick | CacheKeepaliveStopped | DelegationOutcomeRecorded)
 export interface LifecycleState {
   readonly revision: number
   readonly seq: number
@@ -745,6 +755,31 @@ export function reduceLifecycle(state: LifecycleState, event: LifecycleEvent): L
       assert(item.producerGenerationId !== event.verifierGenerationId, 'verification must be independent')
       assert(generations[event.verifierGenerationId]?.runId === event.runId, 'verification generation mismatch')
       requirements[event.requirementId] = { ...record, verdict: event.verdict, verifiedBy: event.verifierGenerationId }
+      changeRun({})
+      break
+    }
+    case 'ASSIGNMENT_ARBITRATED': {
+      const record = requireAssignment(assignments, event.assignmentId)
+      assert(record.runId === event.runId, 'assignment run mismatch')
+      assert(record.status === 'OPEN', 'arbitration requires an open assignment')
+      assert(event.ruling === 'REWORK' || event.ruling === 'ACCEPT' || event.ruling === 'ESCALATE', 'unknown arbitration ruling')
+      assert(event.reason.length > 0, 'arbitration reason required')
+      assert(generations[event.arbiterGenerationId]?.runId === event.runId, 'arbitration generation mismatch')
+      assignments[event.assignmentId] = { ...record,
+        arbitration: { ruling: event.ruling, by: event.arbiterGenerationId, reason: event.reason } }
+      changeRun({})
+      break
+    }
+    case 'REWORK_ORDERED': {
+      const record = requireAssignment(assignments, event.assignmentId)
+      assert(record.runId === event.runId, 'assignment run mismatch')
+      assert(record.status === 'OPEN', 'rework requires an open assignment')
+      assert(event.tier === 'MINOR' || event.tier === 'MAJOR' || event.tier === 'BLOCKER', 'unknown rework tier')
+      assert(event.tier !== 'BLOCKER' || record.arbitration?.ruling === 'REWORK', 'blocker rework requires a lead rework ruling')
+      assert(isSortedUnique(event.addedConstraints), 'invalid rework constraints')
+      const merged = [...record.constraints]
+      for (const added of event.addedConstraints) if (!merged.includes(added)) merged.push(added)
+      assignments[event.assignmentId] = { ...record, briefRevision: record.briefRevision + 1, constraints: merged.sort() }
       changeRun({})
       break
     }
