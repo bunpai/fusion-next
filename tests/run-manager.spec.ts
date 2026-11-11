@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { migrateFusionV2 } from '../src/persistence/index.js'
@@ -103,6 +103,46 @@ describe('B03 transactional run manager', () => {
       manager.append(event({ type: 'RUN_ACTIVATED', runId: run, hostSessionId: session }, 'activated'), 1)
       expect(received).toEqual(['created'])
     } finally { manager.close() }
+  })
+
+  it('rejects reuse of globally owned agent identity across different runs without corrupting DB', () => {
+    const file = path(); migrateFusionV2(file)
+    const manager = openRunManager(file)
+    try {
+      manager.append(event(create, 'a-create'), 0)
+      manager.append(event({ type: 'RUN_ACTIVATED', runId: run, hostSessionId: session }, 'a-active'), 1)
+      const gen = { type: 'GENERATION_PREPARED', generationId: AgentGenerationId('a-gen'), agentId: 'lead', sessionId: 'native-a',
+        route: { provider: 'p', model: 'm', capabilityDigest: 'cap' }, epoch: 1 }
+      manager.append(event({ ...gen, runId: run }, 'a-prepared'), 2)
+      manager.append(event({ ...create, runId: child, hostSessionId: childSession, branchId: 'child', taskId: 'task-2', budgetId: 'budget-2' }, 'b-create'), 0)
+      manager.append(event({ type: 'RUN_ACTIVATED', runId: child, hostSessionId: childSession }, 'b-active'), 1)
+      expect(() => manager.append(event({ ...gen, runId: child, generationId: AgentGenerationId('b-gen') }, 'b-prepared'), 2))
+        .toThrow(/agent.*(owned|identity|run)/i)
+      expect(manager.getRun(child)?.revision).toBe(2)
+      expect(manager.getState().generations['a-gen'].runId).toBe(run)
+      expect(manager.foreignKeyViolations()).toEqual([])
+    } finally { manager.close() }
+  })
+
+  it('allows a durable consumer to catch up from committed journal cursor after restart', () => {
+    const file = path(); migrateFusionV2(file)
+    const writer = openRunManager(file)
+    const seen: string[] = []
+    try {
+      writer.append(event(create, 'created'), 0)
+      const first = writer.readEventsSince(0)
+      expect(first.map(entry => entry.eventId)).toEqual(['created'])
+      const cursorFile = `${file}.consumer-cursor`
+      writeFileSync(cursorFile, String(first[0].cursor))
+      writer.close()
+      const resumed = openRunManager(file)
+      try {
+        resumed.append(event({ type: 'RUN_ACTIVATED', runId: run, hostSessionId: session }, 'activated'), 1)
+        for (const entry of resumed.readEventsSince(Number(readFileSync(cursorFile, 'utf8')))) seen.push(entry.eventId)
+        expect(seen).toEqual(['activated'])
+        expect(resumed.readEventsSince(Number(readFileSync(cursorFile, 'utf8'))).map(entry => entry.eventId)).toEqual(['activated'])
+      } finally { resumed.close() }
+    } finally { writer.close() }
   })
 
   it('persists generation per-agent projection with foreign keys intact', () => {

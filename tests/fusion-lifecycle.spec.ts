@@ -92,6 +92,16 @@ describe('Fusion Next B01 pure lifecycle', () => {
     expect(state.runs[run].currentGenerationIds).toEqual({ lead: generation, worker: replacement })
   })
 
+  it('rejects reusing an agent identity owned by another run', () => {
+    const state = replayLifecycle(events([create, { type: 'RUN_ACTIVATED', runId: run, hostSessionId: session },
+      { type: 'GENERATION_PREPARED', runId: run, generationId: generation, agentId: 'lead', sessionId: 'native-a', route, epoch: 1 },
+      { type: 'RUN_CREATED', runId: child, hostSessionId: childSession, taskId: 'task-b', budgetId: 'budget-b', branchId: 'branch-b', mode: 'DIRECT' },
+      { type: 'RUN_ACTIVATED', runId: child, hostSessionId: childSession }]))
+    expect(() => reduceLifecycle(state, { ...events([{ type: 'GENERATION_PREPARED', runId: child,
+      generationId: replacement, agentId: 'lead', sessionId: 'native-b', route, epoch: 1 }])[0],
+      eventId: 'cross-run-lead', seq: 6, expectedRevision: 5 })).toThrow(/agent.*(owned|identity|run)/i)
+  })
+
   it('rejects fork from a source that did not exist at forkPointSeq', () => {
     const state = replayLifecycle(events([create, { type: 'RUN_ACTIVATED', runId: run, hostSessionId: session }]))
     expect(() => reduceLifecycle(state, { ...events([{ type: 'SESSION_FORKED', runId: child, hostSessionId: childSession,

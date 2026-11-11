@@ -9,6 +9,8 @@ import {
 export type RunEventInput = Omit<LifecycleEvent, 'seq' | 'expectedRevision'>
 export interface AppendOptions { /** Transaction fault injection; executed after all writes, before COMMIT. */ beforeCommit?: () => void }
 export interface StoredRunEvent { eventId: string; runId: FusionRunId; seq: number; type: string; payload: LifecycleEvent }
+/** Durable global sequence encoded in payload_json, independent of rowid and VACUUM. */
+export interface JournalEvent extends StoredRunEvent { cursor: number }
 
 const conflict = (message: string): never => { throw new Error(`Fusion RunManager conflict: ${message}`) }
 function canonical(value: unknown): string {
@@ -48,6 +50,25 @@ export class RunManager {
   getRun(runId: FusionRunId): FusionRun | undefined { return this.getState().runs[runId] }
   getAlias(sessionId: SessionAliasId): SessionAlias | undefined { return this.getState().aliases[sessionId] }
   listEvents(runId: FusionRunId): StoredRunEvent[] { this.ensureOpen(); return this.events().filter(item => item.runId === runId) }
+  /** Committed journal is the durable outbox. Persist cursor externally after handling each event.
+   * Consumers can replay from their last durable cursor after restart; delivery is at-least-once.
+   * This cursor is the global reducer seq stored in payload, NOT SQLite rowid (VACUUM-safe).
+   * subscribe() is best-effort only and must not be used for reliable delivery.
+   */
+  readEventsSince(cursor: number, limit = 100): JournalEvent[] {
+    this.ensureOpen()
+    if (!Number.isSafeInteger(cursor) || cursor < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 1000) {
+      conflict('invalid journal cursor or limit')
+    }
+    return this.db.prepare(`SELECT event_id, run_id, seq, type, payload_json FROM fusion_events
+      WHERE CAST(json_extract(payload_json, '$.seq') AS INTEGER) > ?
+      ORDER BY CAST(json_extract(payload_json, '$.seq') AS INTEGER) LIMIT ?`).all(cursor, limit)
+      .map(row => {
+        const payload = JSON.parse(String(row.payload_json)) as LifecycleEvent
+        return { eventId: String(row.event_id), runId: String(row.run_id) as FusionRunId,
+          seq: Number(row.seq), type: String(row.type), payload, cursor: payload.seq }
+      })
+  }
   foreignKeyViolations(): unknown[] { this.ensureOpen(); return this.db.prepare('PRAGMA foreign_key_check').all() }
 
   /** expectedRevision is scoped to event.runId; fork parents are checked under the same writer lock. */
@@ -116,6 +137,8 @@ export class RunManager {
     const agents = this.db.prepare(`INSERT INTO fusion_agents (agent_id,run_id,role,permission_profile,current_generation_id)
       VALUES (?,?,?,?,?) ON CONFLICT(agent_id) DO UPDATE SET current_generation_id=excluded.current_generation_id`)
     for (const run of Object.values(state.runs)) for (const agentId of run.agentIds) {
+      const storedOwner = this.db.prepare('SELECT run_id FROM fusion_agents WHERE agent_id = ?').get(agentId)?.run_id
+      if (storedOwner !== undefined && storedOwner !== run.id) conflict(`agent identity already owned by run ${storedOwner}`)
       agents.run(agentId, run.id, 'unspecified', 'unassigned', run.currentGenerationIds[agentId] ?? null)
     }
     const generations = this.db.prepare(`INSERT INTO fusion_generations (id,agent_id,native_session_id,epoch,provider,model,capability_digest,status)

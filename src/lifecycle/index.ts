@@ -174,6 +174,8 @@ export function reduceLifecycle(state: LifecycleState, event: LifecycleEvent): L
       const owner = requireRun()
       assert(!generations[event.generationId], 'generation id already exists')
       assert(event.agentId && event.sessionId && event.route.provider && event.route.model && event.route.capabilityDigest, 'incomplete generation')
+      assert(!Object.values(runs).some(r => r.id !== event.runId && r.agentIds.includes(event.agentId)),
+        'agent identity already owned by another run')
       const predecessors = Object.values(generations).filter(g => g.runId === event.runId && g.agentId === event.agentId)
       // Prepare may overlap an old draining generation; activation still requires current generation retirement.
       assert(predecessors.every(g => g.status === 'RETIRED' || g.status === 'DRAINING'), 'agent has non-draining generation')
