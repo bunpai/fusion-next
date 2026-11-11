@@ -1,0 +1,14 @@
+{
+  "id": "history-activation", "provenance": "synthetic-model", "hostGuiEvidence": "BLOCKED",
+  "description": "Reopen a historical session whose saved native selection was Fusion; activate before model request.",
+  "events": [
+    { "type": "open", "session": "historic", "historical": true, "selected": "fusion" },
+    { "type": "activate", "session": "historic" },
+    { "type": "request", "session": "historic", "route": "fusion", "request": "history-turn" },
+    { "type": "settle", "session": "historic", "request": "history-turn" }
+  ],
+  "expected": {
+    "timeline": ["open:historic:history", "activate:historic:fusion", "request:historic:history-turn:fusion", "settle:historic:history-turn"],
+    "sessions": { "historic": { "selection": "fusion", "active": true, "parent": null, "inFlight": [] } }
+  }
+}

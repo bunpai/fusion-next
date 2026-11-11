@@ -1,0 +1,26 @@
+{
+  "id": "parallel-branches", "provenance": "synthetic-model", "hostGuiEvidence": "BLOCKED",
+  "description": "Two activated fork branches carry concurrent independent requests; settling one must not settle the other.",
+  "events": [
+    { "type": "open", "session": "root", "selected": "fusion" },
+    { "type": "activate", "session": "root" },
+    { "type": "fork", "from": "root", "session": "branch-a" },
+    { "type": "fork", "from": "root", "session": "branch-b" },
+    { "type": "select", "session": "branch-a", "route": "fusion" },
+    { "type": "activate", "session": "branch-a" },
+    { "type": "select", "session": "branch-b", "route": "fusion" },
+    { "type": "activate", "session": "branch-b" },
+    { "type": "request", "session": "branch-a", "route": "fusion", "request": "a-turn" },
+    { "type": "request", "session": "branch-b", "route": "fusion", "request": "b-turn" },
+    { "type": "settle", "session": "branch-b", "request": "b-turn" },
+    { "type": "settle", "session": "branch-a", "request": "a-turn" }
+  ],
+  "expected": {
+    "timeline": ["open:root:new", "activate:root:fusion", "fork:root->branch-a", "fork:root->branch-b", "select:branch-a:fusion", "activate:branch-a:fusion", "select:branch-b:fusion", "activate:branch-b:fusion", "request:branch-a:a-turn:fusion", "request:branch-b:b-turn:fusion", "settle:branch-b:b-turn", "settle:branch-a:a-turn"],
+    "sessions": {
+      "root": { "selection": "fusion", "active": true, "parent": null, "inFlight": [] },
+      "branch-a": { "selection": "fusion", "active": true, "parent": "root", "inFlight": [] },
+      "branch-b": { "selection": "fusion", "active": true, "parent": "root", "inFlight": [] }
+    }
+  }
+}

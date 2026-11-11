@@ -1,0 +1,18 @@
+{
+  "id": "menu-enter-exit", "provenance": "synthetic-model", "hostGuiEvidence": "BLOCKED",
+  "description": "Native model menu ordinary → Fusion → ordinary; drain Fusion request before exit; never dispatch ordinary through Fusion.",
+  "events": [
+    { "type": "open", "session": "main" },
+    { "type": "activate", "session": "main" },
+    { "type": "select", "session": "main", "route": "fusion" },
+    { "type": "request", "session": "main", "route": "fusion", "request": "fusion-turn" },
+    { "type": "settle", "session": "main", "request": "fusion-turn" },
+    { "type": "select", "session": "main", "route": "ordinary" },
+    { "type": "request", "session": "main", "route": "ordinary", "request": "ordinary-turn" },
+    { "type": "settle", "session": "main", "request": "ordinary-turn" }
+  ],
+  "expected": {
+    "timeline": ["open:main:new", "activate:main:ordinary", "select:main:fusion", "request:main:fusion-turn:fusion", "settle:main:fusion-turn", "select:main:ordinary", "request:main:ordinary-turn:ordinary", "settle:main:ordinary-turn"],
+    "sessions": { "main": { "selection": "ordinary", "active": true, "parent": null, "inFlight": [] } }
+  }
+}

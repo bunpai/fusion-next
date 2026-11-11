@@ -1,0 +1,20 @@
+{
+  "id": "fork-activation", "provenance": "synthetic-model", "hostGuiEvidence": "BLOCKED",
+  "description": "Fork from Fusion parent: child starts ordinary/inactive; explicit child selection and activation required.",
+  "events": [
+    { "type": "open", "session": "parent", "selected": "fusion" },
+    { "type": "activate", "session": "parent" },
+    { "type": "fork", "from": "parent", "session": "fork-a" },
+    { "type": "select", "session": "fork-a", "route": "fusion" },
+    { "type": "activate", "session": "fork-a" },
+    { "type": "request", "session": "fork-a", "route": "fusion", "request": "fork-request" },
+    { "type": "settle", "session": "fork-a", "request": "fork-request" }
+  ],
+  "expected": {
+    "timeline": ["open:parent:new", "activate:parent:fusion", "fork:parent->fork-a", "select:fork-a:fusion", "activate:fork-a:fusion", "request:fork-a:fork-request:fusion", "settle:fork-a:fork-request"],
+    "sessions": {
+      "parent": { "selection": "fusion", "active": true, "parent": null, "inFlight": [] },
+      "fork-a": { "selection": "fusion", "active": true, "parent": "parent", "inFlight": [] }
+    }
+  }
+}
