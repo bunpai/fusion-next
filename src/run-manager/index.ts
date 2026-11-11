@@ -165,6 +165,13 @@ export class RunManager {
     for (const assignment of Object.values(state.assignments)) {
       for (const dependsOn of assignment.dependsOn) dependencies.run(assignment.assignmentId, dependsOn)
     }
+    const worktreeRows = this.db.prepare(`INSERT INTO fusion_worktrees (id, run_id, assignment_id, base_commit, path, state, merge_commit, rollback_ref)
+      VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET
+      state=excluded.state, merge_commit=excluded.merge_commit, rollback_ref=excluded.rollback_ref`)
+    for (const worktree of Object.values(state.worktrees)) {
+      worktreeRows.run(worktree.worktreeId, worktree.runId, null, worktree.baseCommit, worktree.path,
+        worktree.state, worktree.mergeCommit ?? null, worktree.rollbackRef ?? null)
+    }
     const budgets = this.db.prepare(`INSERT INTO fusion_budgets (budget_id, hard_cost, max_calls, max_retries, spent, reserved, approval_id)
       VALUES (?,?,?,?,?,?,?) ON CONFLICT(budget_id) DO UPDATE SET
       hard_cost=excluded.hard_cost, max_calls=excluded.max_calls, max_retries=excluded.max_retries,
