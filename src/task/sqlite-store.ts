@@ -24,7 +24,7 @@ export class SqliteFusionStore implements FusionStore {
     try {
       this.#db.exec('PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON;')
       const version = this.#db.prepare('PRAGMA user_version').get()?.user_version
-      if (version !== 0 && version !== 1) throw new FusionError(STORE_MIGRATION_REQUIRED, 'unknown Fusion database version')
+      if (version !== 0 && version !== 1 && version !== 2) throw new FusionError(STORE_MIGRATION_REQUIRED, 'unknown Fusion database version')
       if (version === 0) {
         const count = this.#db.prepare("SELECT count(*) AS n FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'").get()?.n
         if (count !== 0) throw new FusionError(STORE_MIGRATION_REQUIRED, 'unversioned nonempty Fusion database')
