@@ -31,6 +31,11 @@ export class RouteCapabilityRegistry {
     this.declared.set(`${provider}/${model}`, capability)
   }
 
+  /** Non-throwing lookup used by the L01 legacy-menu mapping. */
+  lookup(provider: string, model: string): RouteCapability | undefined {
+    return this.declared.get(`${provider}/${model}`)
+  }
+
   assertCapable(route: ModelRoute, required: CapabilityRequirements): void {
     const known = this.declared.get(routeKey(route))
     if (!known) throw new Error(`ROUTE_CAPABILITY_REJECTED: ${routeKey(route)} is not a declared capable route`)
