@@ -30,4 +30,10 @@ export declare function installNativeFusionSelection(ctx: Context, input: {
     coordinator(): FusionCoordinator | undefined;
     profile(): ResolvedProfile | undefined;
     selection(agent: Agent): PhysicalRoute | undefined;
+    /**
+     * Optional C01 activation seam, invoked once a session commits to Fusion.
+     * The Host adapter is supplied by later integration tasks; when absent this
+     * installer keeps its previous behavior unchanged (fail-closed, no Host calls).
+     */
+    activate?(sessionId: string): void;
 }): () => void;
