@@ -102,6 +102,19 @@ export interface GenerationAuthority {
   generationId: AgentGenerationId; runId: FusionRunId
   toolScope: readonly string[]; writePaths: readonly string[]; approvalRequired: readonly string[]
 }
+export type AssignmentRole = 'LEAD' | 'WORKER' | 'REVIEWER'
+export type AssignmentStatus = 'OPEN' | 'COMPLETED' | 'FAILED' | 'TAKEN_OVER'
+export type ReportStatus = 'COMPLETED' | 'FAILED' | 'NEEDS_INPUT'
+export interface AssignmentRecord {
+  assignmentId: string; runId: FusionRunId; role: AssignmentRole; workerAgentId?: string
+  briefRevision: number; objective: string; constraints: readonly string[]; contextRefs: readonly string[]
+  writeScope: readonly string[]; status: AssignmentStatus; lastReportId?: string
+  takenBy?: string; takenReason?: string
+}
+export interface AgentReportRecord {
+  reportId: string; runId: FusionRunId; assignmentId: string; generationId: AgentGenerationId
+  summary: string; status: ReportStatus; artifacts: readonly string[]
+}
 type EffectIntent = {
   type: 'EFFECT_INTENT_RECORDED'; runId: FusionRunId; effectId: string
   generationId: AgentGenerationId; toolCallId: string; effectClass: EffectClass
@@ -113,6 +126,22 @@ type EffectTransition = {
   receiptRef?: string; outcome?: 'SUCCEEDED' | 'FAILED_KNOWN'
 }
 /** Internal projected domain events, NOT discovered or promised Host SDK events. */
+type AssignmentCreated = {
+  type: 'ASSIGNMENT_CREATED'; runId: FusionRunId; assignmentId: string; role: AssignmentRole
+  workerAgentId?: string; brief: { objective: string; constraints: string[]; contextRefs: string[]; revision: number }
+  writeScope: string[]
+}
+type AssignmentBriefRevised = {
+  type: 'ASSIGNMENT_BRIEF_REVISED'; runId: FusionRunId; assignmentId: string; briefRevision: number
+  objective: string; constraints: string[]; contextRefs: string[]
+}
+type AssignmentReported = {
+  type: 'ASSIGNMENT_REPORTED'; runId: FusionRunId; assignmentId: string; reportId: string
+  generationId: AgentGenerationId; summary: string; status: ReportStatus; artifacts: string[]
+}
+type AssignmentCompleted = { type: 'ASSIGNMENT_COMPLETED'; runId: FusionRunId; assignmentId: string; reportId: string }
+type AssignmentFailed = { type: 'ASSIGNMENT_FAILED'; runId: FusionRunId; assignmentId: string; reportId: string }
+type AssignmentTakeover = { type: 'ASSIGNMENT_TAKEOVER'; runId: FusionRunId; assignmentId: string; byAgentId: string; reason: string }
 type AuthorityIssued = {
   type: 'AUTHORITY_ISSUED'; runId: FusionRunId; generationId: AgentGenerationId
   toolScope: string[]; writePaths: string[]; approvalRequired: string[]
@@ -126,7 +155,7 @@ type TransitionRolledBack = { type: 'TRANSITION_ROLLED_BACK'; runId: FusionRunId
 type TransitionEvents = TransitionCheckpointed | TransitionCommitted | TransitionRolledBack
 
 export type LifecycleEvent = { readonly schemaVersion: 1; readonly eventId: string; readonly seq: number; readonly expectedRevision: number } &
-  (Created | Forked | Bound | RunChange | Prepared | GenerationChange | SwitchCommitted | EffectIntent | EffectTransition | TransitionEvents | AuthorityIssued)
+  (Created | Forked | Bound | RunChange | Prepared | GenerationChange | SwitchCommitted | EffectIntent | EffectTransition | TransitionEvents | AuthorityIssued | AssignmentCreated | AssignmentBriefRevised | AssignmentReported | AssignmentCompleted | AssignmentFailed | AssignmentTakeover)
 export interface LifecycleState {
   readonly revision: number
   readonly seq: number
@@ -137,6 +166,8 @@ export interface LifecycleState {
   readonly effects: Readonly<Record<string, EffectRecord>>
   readonly transitions: Readonly<Record<string, TransitionRecord>>
   readonly authorities: Readonly<Record<string, GenerationAuthority>>
+  readonly assignments: Readonly<Record<string, AssignmentRecord>>
+  readonly reports: Readonly<Record<string, AgentReportRecord>>
   /** Event id -> canonical payload; replay duplicate with differing payload is a conflict. */
   readonly appliedEvents: Readonly<Record<string, string>>
 }
@@ -151,9 +182,14 @@ function deepFreeze<T>(value: T): T {
 const stable = (value: unknown): string => JSON.stringify(value, (_key, item: unknown) =>
   item && typeof item === 'object' && !Array.isArray(item)
     ? Object.fromEntries(Object.entries(item as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b))) : item)
-export const emptyLifecycleState = (): LifecycleState => deepFreeze({ revision: 0, seq: 0, runs: dictionary(), aliases: dictionary(), generations: dictionary(), lineage: dictionary(), effects: dictionary(), transitions: dictionary(), authorities: dictionary(), appliedEvents: dictionary() })
+export const emptyLifecycleState = (): LifecycleState => deepFreeze({ revision: 0, seq: 0, runs: dictionary(), aliases: dictionary(), generations: dictionary(), lineage: dictionary(), effects: dictionary(), transitions: dictionary(), authorities: dictionary(), assignments: dictionary(), reports: dictionary(), appliedEvents: dictionary() })
 const invalid = (reason: string): never => { throw new Error(`lifecycle conflict: ${reason}`) }
 function assert(condition: unknown, reason: string): asserts condition { if (!condition) invalid(reason) }
+function requireAssignment(assignments: Record<string, AssignmentRecord>, assignmentId: string): AssignmentRecord {
+  const record = assignments[assignmentId]
+  if (!record) invalid(`assignment ${assignmentId} unknown`)
+  return record
+}
 function isSortedUnique(values: readonly string[]): boolean {
   for (let i = 0; i < values.length; i += 1) {
     const value = values[i]
@@ -174,7 +210,7 @@ export function reduceLifecycle(state: LifecycleState, event: LifecycleEvent): L
   }
   assert(event.seq === state.seq + 1, `out-of-order seq: expected ${state.seq + 1}`)
   assert(event.expectedRevision === state.revision, `stale revision: expected ${state.revision}`)
-  const runs = dictionary(state.runs), aliases = dictionary(state.aliases), generations = dictionary(state.generations), lineage = dictionary(state.lineage), effects = dictionary(state.effects), transitions = dictionary(state.transitions), authorities = dictionary(state.authorities)
+  const runs = dictionary(state.runs), aliases = dictionary(state.aliases), generations = dictionary(state.generations), lineage = dictionary(state.lineage), effects = dictionary(state.effects), transitions = dictionary(state.transitions), authorities = dictionary(state.authorities), assignments = dictionary(state.assignments), reports = dictionary(state.reports)
   const current = runs[event.runId]
   const requireRun = (): FusionRun => current ?? invalid('unknown run')
   const requireEffect = (effectId: string): EffectRecord => effects[effectId] ?? invalid('unknown effect')
@@ -398,6 +434,75 @@ export function reduceLifecycle(state: LifecycleState, event: LifecycleEvent): L
       changeRun({})
       break
     }
+    case 'ASSIGNMENT_CREATED': {
+      assert(runs[event.runId] !== undefined, 'assignment run unknown')
+      assert(!assignments[event.assignmentId], 'assignment id already exists')
+      assert(event.role === 'LEAD' || event.role === 'WORKER' || event.role === 'REVIEWER', 'unknown assignment role')
+      assert(!(event.role === 'LEAD' && event.workerAgentId), 'direct assignment must not carry a worker')
+      assert(!event.workerAgentId || runs[event.runId].agentIds.includes(event.workerAgentId), 'assignment worker not in run')
+      assert(event.brief.objective.length > 0, 'assignment brief objective required')
+      assert(Number.isSafeInteger(event.brief.revision) && event.brief.revision >= 1, 'assignment brief revision must be a positive integer')
+      assert(isSortedUnique(event.writeScope), 'invalid assignment write scope')
+      assignments[event.assignmentId] = { assignmentId: event.assignmentId, runId: event.runId, role: event.role,
+        workerAgentId: event.workerAgentId, briefRevision: event.brief.revision, objective: event.brief.objective,
+        constraints: event.brief.constraints, contextRefs: event.brief.contextRefs, writeScope: event.writeScope,
+        status: 'OPEN' }
+      changeRun({})
+      break
+    }
+    case 'ASSIGNMENT_BRIEF_REVISED': {
+      const record = requireAssignment(assignments, event.assignmentId)
+      assert(record.runId === event.runId, 'assignment run mismatch')
+      assert(Number.isSafeInteger(event.briefRevision) && event.briefRevision > record.briefRevision, 'assignment brief revision must increase')
+      assert(event.objective.length > 0, 'assignment brief objective required')
+      assignments[event.assignmentId] = { ...record, briefRevision: event.briefRevision,
+        objective: event.objective, constraints: event.constraints, contextRefs: event.contextRefs }
+      changeRun({})
+      break
+    }
+    case 'ASSIGNMENT_REPORTED': {
+      assert(!reports[event.reportId], 'report id already exists')
+      const record = requireAssignment(assignments, event.assignmentId)
+      assert(record.runId === event.runId, 'assignment run mismatch')
+      const generation = generations[event.generationId]
+      assert(generation !== undefined && generation.runId === event.runId, 'assignment report generation mismatch')
+      assert(record.status !== 'TAKEN_OVER', 'assignment already taken over')
+      assert(event.status === 'COMPLETED' || event.status === 'FAILED' || event.status === 'NEEDS_INPUT', 'unknown report status')
+      assert(isSortedUnique(event.artifacts), 'invalid report artifacts')
+      if (record.workerAgentId) {
+        // A late report from a generation that is no longer current can never commit (plan D02/T14).
+        assert(generation.agentId === record.workerAgentId &&
+          runs[event.runId].currentGenerationIds[record.workerAgentId] === event.generationId, 'stale agent report fenced')
+      }
+      reports[event.reportId] = { reportId: event.reportId, runId: event.runId, assignmentId: event.assignmentId,
+        generationId: event.generationId, summary: event.summary, status: event.status, artifacts: event.artifacts }
+      assignments[event.assignmentId] = { ...record, lastReportId: event.reportId }
+      changeRun({})
+      break
+    }
+    case 'ASSIGNMENT_COMPLETED':
+    case 'ASSIGNMENT_FAILED': {
+      const record = requireAssignment(assignments, event.assignmentId)
+      assert(record.runId === event.runId, 'assignment run mismatch')
+      assert(record.status !== 'COMPLETED' && record.status !== 'FAILED', 'assignment already finalized')
+      const report = reports[event.reportId]
+      assert(report !== undefined && report.runId === event.runId && report.assignmentId === event.assignmentId, 'assignment report unknown')
+      const wanted = event.type === 'ASSIGNMENT_COMPLETED' ? 'COMPLETED' : 'FAILED'
+      assert(report.status === wanted, 'assignment completion requires a matching report status')
+      assignments[event.assignmentId] = { ...record, status: wanted }
+      changeRun({})
+      break
+    }
+    case 'ASSIGNMENT_TAKEOVER': {
+      const record = requireAssignment(assignments, event.assignmentId)
+      assert(record.runId === event.runId, 'assignment run mismatch')
+      assert(record.status === 'OPEN', 'only open assignments can be taken over')
+      assert(runs[event.runId].agentIds.includes(event.byAgentId), 'takeover agent not in run')
+      assert(event.reason.length > 0, 'takeover reason required')
+      assignments[event.assignmentId] = { ...record, status: 'TAKEN_OVER', takenBy: event.byAgentId, takenReason: event.reason }
+      changeRun({})
+      break
+    }
     case 'AUTHORITY_ISSUED': {
       // An authority profile is bound to exactly one generation at preparation time and is
       // immutable afterwards; Worker/Lead/Reviewer resume from this profile, never broader.
@@ -412,7 +517,7 @@ export function reduceLifecycle(state: LifecycleState, event: LifecycleEvent): L
     }
     default: invalid('unknown event type')
   }
-  return deepFreeze({ revision: state.revision + 1, seq: event.seq, runs, aliases, generations, lineage, effects, transitions, authorities,
+  return deepFreeze({ revision: state.revision + 1, seq: event.seq, runs, aliases, generations, lineage, effects, transitions, authorities, assignments, reports,
     appliedEvents: dictionary({ ...state.appliedEvents, [event.eventId]: fingerprint }) })
 }
 export function replayLifecycle(events: readonly LifecycleEvent[], initial = emptyLifecycleState()): LifecycleState {

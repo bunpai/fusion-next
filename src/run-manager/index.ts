@@ -152,6 +152,14 @@ export class RunManager {
       effects.run(effect.effectId, effect.runId, effect.generationId, effect.toolCallId, effect.fingerprint,
         effect.state, effect.receiptRef ?? null, effect.idempotencyKey)
     }
+    const assignments = this.db.prepare(`INSERT INTO fusion_assignments (id, run_id, brief_revision, role, worker_id, status, write_scope_json)
+      VALUES (?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET
+      brief_revision=excluded.brief_revision, role=excluded.role, worker_id=excluded.worker_id,
+      status=excluded.status, write_scope_json=excluded.write_scope_json`)
+    for (const assignment of Object.values(state.assignments)) {
+      assignments.run(assignment.assignmentId, assignment.runId, assignment.briefRevision, assignment.role,
+        assignment.workerAgentId ?? null, assignment.status, JSON.stringify(assignment.writeScope))
+    }
     const transitions = this.db.prepare(`INSERT INTO fusion_transitions (id, run_id, agent_id, from_gen, to_gen, phase, expected_revision, error, created_at, updated_at)
       VALUES (?,?,?,?,?,?,?,?,?,?)
       ON CONFLICT(id) DO UPDATE SET from_gen=excluded.from_gen,to_gen=excluded.to_gen,phase=excluded.phase,error=excluded.error,updated_at=excluded.updated_at`)
