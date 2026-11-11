@@ -72,6 +72,18 @@ describe('Fusion persistence v1 → v2 additive migration', () => {
     expect(db.prepare('SELECT json FROM documents WHERE id=?').get('persisted')?.json).toBe('{"answer":42}')
   })
 
+  it('never implicitly upgrades a v1 database when opening the v2 connection', () => {
+    const file = dbPath()
+    const legacy = new SqliteFusionStore(file)
+    legacy.writeDocument('v1-only', 0, { preserved: true })
+    legacy.close()
+    expect(() => openFusionV2(file)).toThrow(/v2 database required/)
+    const original = raw(file)
+    expect(original.prepare('PRAGMA user_version').get()?.user_version).toBe(1)
+    expect(original.prepare('SELECT json FROM documents WHERE id=?').get('v1-only')?.json).toBe('{"preserved":true}')
+    expect(original.prepare("SELECT count(*) AS n FROM sqlite_master WHERE name='fusion_runs'").get()?.n).toBe(0)
+  })
+
   it('creates v2 on an empty path and rejects future versions and unversioned populated files', () => {
     const fresh = dbPath()
     expect(() => openFusionV2(fresh)).toThrow(/migrateFusionV2 first/)
