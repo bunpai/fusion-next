@@ -42,6 +42,12 @@ export function installNativeFusionSelection(ctx: Context, input: {
   coordinator(): FusionCoordinator | undefined
   profile(): ResolvedProfile | undefined
   selection(agent: Agent): PhysicalRoute | undefined
+  /**
+   * Optional C01 activation seam, invoked once a session commits to Fusion.
+   * The Host adapter is supplied by later integration tasks; when absent this
+   * installer keeps its previous behavior unchanged (fail-closed, no Host calls).
+   */
+  activate?(sessionId: string): void
 }): () => void {
   const pending = new Map<string, Promise<void>>()
   const failures = new Map<string, string>()
@@ -62,6 +68,11 @@ export function installNativeFusionSelection(ctx: Context, input: {
         if (!isFusionSelection(intent?.data)) agent.session.append('model/selection', {
           provider: FUSION_PROVIDER, model: FUSION_MODEL,
         })
+        // C01 activation seam: the caller-verified capability gate lives inside
+        // the adapter; a denied or failing activation blocks the next request.
+        if (input.activate) {
+          try { input.activate(agent.session.id) } catch (error) { failures.set(agent.id, String(error)) }
+        }
         failures.delete(agent.id)
       }
       return
