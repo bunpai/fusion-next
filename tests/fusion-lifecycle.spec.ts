@@ -29,6 +29,7 @@ describe('Fusion Next B01 pure lifecycle', () => {
       { type: 'RUN_RESTORED', runId: run, hostSessionId: session }]))
     expect(state.runs[run].status).toBe('RUNNING')
     expect(state.aliases[session].selectionStatus).toBe('ACTIVE')
+    expect(state.runs[run].hasActivated).toBe(true)
   })
 
   it('forks to independent run/task/agent/budget and excludes transient authority', () => {
@@ -55,14 +56,13 @@ describe('Fusion Next B01 pure lifecycle', () => {
       { type: 'GENERATION_PREPARED', runId: run, generationId: generation, agentId: 'agent-a', sessionId: 'native-a', route, epoch: 1 },
       { type: 'GENERATION_ACTIVATED', runId: run, generationId: generation },
       { type: 'GENERATION_DRAINING', runId: run, generationId: generation },
-      { type: 'GENERATION_RETIRED', runId: run, generationId: generation },
       { type: 'GENERATION_PREPARED', runId: run, generationId: replacement, agentId: 'agent-a', sessionId: 'native-b', route, epoch: 2 },
-      { type: 'GENERATION_ACTIVATED', runId: run, generationId: replacement }])
+      { type: 'GENERATION_SWITCH_COMMITTED', runId: run, fromGenerationId: generation, toGenerationId: replacement }])
     const state = replayLifecycle(prefix)
     expect(state.generations[generation].status).toBe('RETIRED')
     expect(state.generations[replacement].status).toBe('ACTIVE')
     expect(state.runs[run].currentGenerationId).toBe(replacement)
-    expect(() => reduceLifecycle(state, { ...events([{ type: 'GENERATION_CALLBACK', runId: run, generationId: generation }])[0], seq: 9, expectedRevision: 8, eventId: 'late-callback' })).toThrow(/fenced/i)
+    expect(() => reduceLifecycle(state, { ...events([{ type: 'GENERATION_CALLBACK', runId: run, generationId: generation }])[0], seq: 8, expectedRevision: 7, eventId: 'late-callback' })).toThrow(/fenced/i)
   })
 
   it('allows next generation PREPARING while old generation DRAINING, but never two ACTIVE', () => {
@@ -76,10 +76,10 @@ describe('Fusion Next B01 pure lifecycle', () => {
     expect(prepared.generations[replacement].status).toBe('PREPARING')
     expect(() => reduceLifecycle(prepared, { ...events([{ type: 'GENERATION_ACTIVATED', runId: run, generationId: replacement }])[0],
       eventId: 'premature-commit', seq: 7, expectedRevision: 6 })).toThrow(/current generation/i)
-    const retired = reduceLifecycle(prepared, { ...events([{ type: 'GENERATION_RETIRED', runId: run, generationId: generation }])[0],
-      eventId: 'old-retired', seq: 7, expectedRevision: 6 })
-    const switched = reduceLifecycle(retired, { ...events([{ type: 'GENERATION_ACTIVATED', runId: run, generationId: replacement }])[0],
-      eventId: 'new-active', seq: 8, expectedRevision: 7 })
+    expect(() => reduceLifecycle(prepared, { ...events([{ type: 'GENERATION_RETIRED', runId: run, generationId: generation }])[0],
+      eventId: 'old-retired', seq: 7, expectedRevision: 6 })).toThrow(/atomic switch/i)
+    const switched = reduceLifecycle(prepared, { ...events([{ type: 'GENERATION_SWITCH_COMMITTED', runId: run,
+      fromGenerationId: generation, toGenerationId: replacement }])[0], eventId: 'atomic-switch', seq: 7, expectedRevision: 6 })
     expect(switched.runs[run].currentGenerationId).toBe(replacement)
   })
 

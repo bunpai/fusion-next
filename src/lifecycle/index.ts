@@ -72,10 +72,11 @@ type Forked = { type: 'SESSION_FORKED'; runId: FusionRunId; hostSessionId: Sessi
 type Bound = { type: 'RUN_ACTIVATED' | 'RUN_RESTORE_REQUESTED' | 'RUN_RESTORED'; runId: FusionRunId; hostSessionId: SessionAliasId }
 type RunChange = { type: 'RUN_SUSPEND_REQUESTED' | 'RUN_SUSPENDED'; runId: FusionRunId }
 type Prepared = { type: 'GENERATION_PREPARED'; runId: FusionRunId; generationId: AgentGenerationId; agentId: string; sessionId: string; route: ModelRoute; epoch: number }
+type SwitchCommitted = { type: 'GENERATION_SWITCH_COMMITTED'; runId: FusionRunId; fromGenerationId: AgentGenerationId; toGenerationId: AgentGenerationId }
 type GenerationChange = { type: 'GENERATION_ACTIVATED' | 'GENERATION_DRAINING' | 'GENERATION_RETIRED' | 'GENERATION_CALLBACK' | 'GENERATION_PREPARATION_ABORTED' | 'GENERATION_DRAIN_CANCELLED'; runId: FusionRunId; generationId: AgentGenerationId }
 /** Internal projected domain events, NOT discovered or promised Host SDK events. */
 export type LifecycleEvent = { readonly schemaVersion: 1; readonly eventId: string; readonly seq: number; readonly expectedRevision: number } &
-  (Created | Forked | Bound | RunChange | Prepared | GenerationChange)
+  (Created | Forked | Bound | RunChange | Prepared | GenerationChange | SwitchCommitted)
 export interface LifecycleState {
   readonly revision: number
   readonly seq: number
@@ -168,7 +169,7 @@ export function reduceLifecycle(state: LifecycleState, event: LifecycleEvent): L
       assert(requireRun().status === 'ACTIVATING' && requireRun().restorePending === true, 'illegal restore completion')
       assert(!activeOwner(event.hostSessionId), 'session already has active Fusion run')
       requireAlias(event.hostSessionId)
-      changeRun({ status: 'RUNNING', restorePending: false }); changeAlias(event.hostSessionId, 'ACTIVE'); break
+      changeRun({ status: 'RUNNING', restorePending: false, hasActivated: true }); changeAlias(event.hostSessionId, 'ACTIVE'); break
     case 'GENERATION_PREPARED': {
       const owner = requireRun()
       assert(!generations[event.generationId], 'generation id already exists')
@@ -180,6 +181,21 @@ export function reduceLifecycle(state: LifecycleState, event: LifecycleEvent): L
       assert(owner.status === 'RUNNING', 'run is not active')
       generations[event.generationId] = { id: event.generationId, runId: event.runId, agentId: event.agentId, sessionId: event.sessionId, route: { ...event.route }, epoch: event.epoch, status: 'PREPARING' }
       changeRun({ agentIds: owner.agentIds.includes(event.agentId) ? owner.agentIds : [...owner.agentIds, event.agentId] })
+      break
+    }
+    case 'GENERATION_SWITCH_COMMITTED': {
+      const oldGeneration = generations[event.fromGenerationId]
+      const nextGeneration = generations[event.toGenerationId]
+      assert(oldGeneration?.runId === event.runId && nextGeneration?.runId === event.runId &&
+        oldGeneration.agentId === nextGeneration.agentId && oldGeneration.id !== nextGeneration.id,
+      'atomic switch ownership mismatch')
+      assert(oldGeneration.status === 'DRAINING' && nextGeneration.status === 'PREPARING', 'illegal atomic switch phases')
+      assert(requireRun().status === 'RUNNING' && requireRun().currentGenerationIds[oldGeneration.agentId] === oldGeneration.id,
+        'atomic switch requires current draining generation')
+      generations[oldGeneration.id] = { ...oldGeneration, status: 'RETIRED' }
+      generations[nextGeneration.id] = { ...nextGeneration, status: 'ACTIVE' }
+      changeRun({ currentGenerationId: nextGeneration.id,
+        currentGenerationIds: dictionary({ ...requireRun().currentGenerationIds, [oldGeneration.agentId]: nextGeneration.id }) })
       break
     }
     case 'GENERATION_ACTIVATED':
@@ -216,6 +232,8 @@ export function reduceLifecycle(state: LifecycleState, event: LifecycleEvent): L
         assert(requireRun().status === 'RUNNING' && !requireRun().currentGenerationIds[gen.agentId], 'current generation already owned')
         changeRun({ currentGenerationId: gen.id, currentGenerationIds: dictionary({ ...requireRun().currentGenerationIds, [gen.agentId]: gen.id }) })
       } else if (event.type === 'GENERATION_RETIRED') {
+        assert(!Object.values(generations).some(other => other.runId === gen.runId && other.agentId === gen.agentId &&
+          other.id !== gen.id && other.status === 'PREPARING'), 'atomic switch required while replacement is preparing')
         assert(requireRun().currentGenerationIds[gen.agentId] === gen.id, 'retiring non-current generation')
         const next = dictionary(requireRun().currentGenerationIds)
         delete next[gen.agentId]
