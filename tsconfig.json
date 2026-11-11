@@ -8,7 +8,15 @@
     "skipLibCheck": true,
     "noEmit": true,
     "rootDir": ".",
-    "types": ["node"]
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": {
+      "@deepseek-ai/*/client": ["node_modules/@deepseek-ai/*/lib/types/client/index.d.ts"],
+      "@deepseek-ai/*/types": ["node_modules/@deepseek-ai/*/lib/types/types.d.ts"],
+      "@deepseek-ai/*/brand": ["node_modules/@deepseek-ai/*/lib/types/brand.d.ts"],
+      "@deepseek-ai/dsh-tool-todo/client": ["node_modules/@deepseek-ai/dsh-tool-todo/lib/types/client.d.ts"],
+      "@deepseek-ai/*": ["node_modules/@deepseek-ai/*/lib/types/index.d.ts"]
+    }
   },
   "include": [
     "src",

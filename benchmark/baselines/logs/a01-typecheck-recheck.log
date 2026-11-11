@@ -1,0 +1,10 @@
+# COMMAND=pnpm run typecheck
+# UTC_START=2026-11-11T00:33:05Z
+# CWD=/Users/baozipai/dsh/插件/fusion-next-source-review
+# SHELL_NODE=v22.21.1
+# PNPM=9.15.9
+
+> dsh-model-fusion@0.2.11 typecheck /Users/baozipai/dsh/插件/fusion-next-source-review
+> tsc -p tsconfig.json --noEmit
+
+EXIT_CODE=0

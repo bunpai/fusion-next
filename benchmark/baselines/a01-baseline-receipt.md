@@ -252,3 +252,20 @@ swallowed, every imported symbol degrades to `any`, and the only visible symptom
 
 `pnpm run test:host` and `pnpm run build` remain **blocked** exactly as in §4.3/§4.4/§5 (no compatible
 `DSHX_HARNESS` checkout on this machine); nothing in this repair changes them.
+
+## 10. A01 local-worktree verification — symlinked dependency store (2026-11-11)
+
+This addendum documents **a new worktree and new command outputs**; it does not rewrite §1–§9 or replace the original raw logs. Worktree: `/Users/baozipai/dsh/插件/fusion-next-source-review`; pre-change HEAD: `fd1ff568994e8a76198a6a6da24037996949894a`. `node_modules` is a symlink to `/Users/baozipai/Documents/dsh/fusion-next-node_modules`; no install was performed and nothing in that dependency store was changed.
+
+**Reproduction before change:** `pnpm run typecheck` exited **2** with exactly two errors: `src/client/FusionTool.tsx(51,48): error TS7006: Parameter 'part' implicitly has an 'any' type.` and `src/client/index.ts(27,15): error TS7006: Parameter 'sessionId' implicitly has an 'any' type.` In this relocated layout, TypeScript resolves the top-level `@deepseek-ai/dsh-client-ui-tool/client` to the realpath beneath `Documents/dsh/fusion-next-node_modules/.pnpm/`, but fails to resolve the transitive `@deepseek-ai/dsh-client-ui-conversation/client` import from that declaration. With `skipLibCheck: true` the missing transitive SDK typing surfaces as callback implicit-any rather than a declaration import error.
+
+**Minimal type-only fix:** `tsconfig.json` adds `baseUrl: "."` and five SDK declaration `paths` mappings: `@deepseek-ai/*/client`, `@deepseek-ai/*/types`, `@deepseek-ai/*/brand`, the exceptional flat-file `@deepseek-ai/dsh-tool-todo/client`, and `@deepseek-ai/*`. These preserve real `.d.ts` signatures across the external dependency-store symlink without modifying client callbacks, weakening `strict`, disabling diagnostics, or changing runtime resolution. The previously validated `/tmp/repo-copy/tsconfig.json` also proposed a broad `"*"` fallback mapping; **that fallback was not necessary** for a green check and was deliberately omitted to avoid overriding unrelated package resolution. `tsconfig.build.json` remains unchanged, including its existing `preserveSymlinks: true`.
+
+| Command | Exit | Evidence | Interpretation |
+|---|---:|---|---|
+| `pnpm run typecheck` | **0** | `logs/a01-typecheck-recheck.log` | Full TS typecheck passes, no diagnostics. |
+| `pnpm run test` | **1** | `logs/a01-unit-test-recheck.log` | **Environment-blocked**, not a test assertion failure: Vite tries writing `node_modules/.vite-temp/vitest.config.ts.timestamp-*.mjs` through the out-of-sandbox symlink and receives `Error: EPERM: operation not permitted, open ...`. |
+| `pnpm run test -- --configLoader runner` | **1** | `logs/a01-unit-test-runner.log` | Attempted workaround did not activate loader: pnpm forwarded the literal `--` to `vitest run -- --configLoader runner`, so the original EPERM persisted. Preserved for accuracy. |
+| `pnpm exec vitest run --configLoader runner` | **0** | `logs/a01-unit-test-exec-runner.log` | **PASS — Test Files 47 passed (47), Tests 393 passed (393)**. The supported Vitest/Vite `runner` config loader avoids generated `.vite-temp` writes. Equivalent Vitest test suite and config, alternate loader only. |
+
+Every new raw log has a timestamp, exact command, Node/pnpm versions, working directory, full output and `EXIT_CODE`. Original `logs/typecheck.log`, `logs/unit-test.log`, `logs/host-test.log`, and `logs/build.log` remain untouched. `test:host` and `build` remain **unverified** because there is still no compatible pinned `DSHX_HARNESS` checkout (§5); neither command was re-run in this stage. No A02/B01 activity and no source-code logic changes.
