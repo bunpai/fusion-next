@@ -81,7 +81,7 @@ describe('C01 history Fusion reopen and missing binding (S06/S18)', () => {
       expect(second.getRun(runId as never)?.status).toBe('SUSPENDED')
       const lifecycle = new SessionLifecycle(second, rc5())
       const outcome = lifecycle.activate('chat-history', restoreIntent)
-      expect(outcome).toMatchObject({ runId, created: false, resumed: false, alreadyActive: false })
+      expect(outcome).toMatchObject({ runId, created: false, resumed: true, alreadyActive: false })
       expect(second.getRun(runId as never)?.status).toBe('RUNNING')
       const types = second.listEvents(runId as never).map(event => event.type)
       expect(types).toEqual(['RUN_CREATED', 'RUN_ACTIVATED', 'RUN_SUSPEND_REQUESTED', 'RUN_SUSPENDED', 'RUN_RESTORE_REQUESTED', 'RUN_RESTORED'])

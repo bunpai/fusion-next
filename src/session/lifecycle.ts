@@ -66,7 +66,7 @@ export class SessionLifecycle {
         }
         this.append(this.restoreRequested(run.id, sessionId, run.revision), run.revision)
         this.append(this.restored(run.id, sessionId, run.revision + 1), run.revision + 1)
-        return { runId: run.id, created: false, resumed: false, alreadyActive: false }
+        return { runId: run.id, created: false, resumed: true, alreadyActive: false }
       default:
         // conflict() never returns; the explicit return satisfies exhaustiveness.
         return conflict(`run ${run.id} in status ${run.status} cannot be activated`)
