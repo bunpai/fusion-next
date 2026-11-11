@@ -27,7 +27,10 @@ export interface FusionRun {
   revision: number
   budgetId: string
   agentIds: readonly string[]
+  /** Compatibility projection for a single current generation; do not use for parallel ownership. */
   currentGenerationId?: AgentGenerationId
+  currentGenerationIds: Readonly<Record<string, AgentGenerationId>>
+  createdSeq: number
   pendingApprovalIds: readonly string[]
   activeLeaseIds: readonly string[]
   restorePending?: boolean
@@ -69,7 +72,7 @@ type Forked = { type: 'SESSION_FORKED'; runId: FusionRunId; hostSessionId: Sessi
 type Bound = { type: 'RUN_ACTIVATED' | 'RUN_RESTORE_REQUESTED' | 'RUN_RESTORED'; runId: FusionRunId; hostSessionId: SessionAliasId }
 type RunChange = { type: 'RUN_SUSPEND_REQUESTED' | 'RUN_SUSPENDED'; runId: FusionRunId }
 type Prepared = { type: 'GENERATION_PREPARED'; runId: FusionRunId; generationId: AgentGenerationId; agentId: string; sessionId: string; route: ModelRoute; epoch: number }
-type GenerationChange = { type: 'GENERATION_ACTIVATED' | 'GENERATION_DRAINING' | 'GENERATION_RETIRED' | 'GENERATION_CALLBACK'; runId: FusionRunId; generationId: AgentGenerationId }
+type GenerationChange = { type: 'GENERATION_ACTIVATED' | 'GENERATION_DRAINING' | 'GENERATION_RETIRED' | 'GENERATION_CALLBACK' | 'GENERATION_PREPARATION_ABORTED' | 'GENERATION_DRAIN_CANCELLED'; runId: FusionRunId; generationId: AgentGenerationId }
 /** Internal projected domain events, NOT discovered or promised Host SDK events. */
 export type LifecycleEvent = { readonly schemaVersion: 1; readonly eventId: string; readonly seq: number; readonly expectedRevision: number } &
   (Created | Forked | Bound | RunChange | Prepared | GenerationChange)
@@ -83,14 +86,25 @@ export interface LifecycleState {
   /** Event id -> canonical payload; replay duplicate with differing payload is a conflict. */
   readonly appliedEvents: Readonly<Record<string, string>>
 }
-export const emptyLifecycleState = (): LifecycleState => ({ revision: 0, seq: 0, runs: {}, aliases: {}, generations: {}, lineage: {}, appliedEvents: {} })
+const dictionary = <T>(source?: Readonly<Record<string, T>>): Record<string, T> => Object.assign(Object.create(null) as Record<string, T>, source)
+function deepFreeze<T>(value: T): T {
+  if (value && typeof value === 'object' && !Object.isFrozen(value)) {
+    Object.freeze(value)
+    for (const nested of Object.values(value)) deepFreeze(nested)
+  }
+  return value
+}
+const stable = (value: unknown): string => JSON.stringify(value, (_key, item: unknown) =>
+  item && typeof item === 'object' && !Array.isArray(item)
+    ? Object.fromEntries(Object.entries(item as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b))) : item)
+export const emptyLifecycleState = (): LifecycleState => deepFreeze({ revision: 0, seq: 0, runs: dictionary(), aliases: dictionary(), generations: dictionary(), lineage: dictionary(), appliedEvents: dictionary() })
 const invalid = (reason: string): never => { throw new Error(`lifecycle conflict: ${reason}`) }
 function assert(condition: unknown, reason: string): asserts condition { if (!condition) invalid(reason) }
 
 export function reduceLifecycle(state: LifecycleState, event: LifecycleEvent): LifecycleState {
   assert(event.schemaVersion === 1, 'unsupported event schema version')
   assert(Boolean(event.eventId?.trim()), 'empty event id')
-  const fingerprint = JSON.stringify(event)
+  const fingerprint = stable(event)
   const previous = state.appliedEvents[event.eventId]
   if (previous !== undefined) {
     assert(previous === fingerprint, 'event id reused with different contents')
@@ -98,7 +112,7 @@ export function reduceLifecycle(state: LifecycleState, event: LifecycleEvent): L
   }
   assert(event.seq === state.seq + 1, `out-of-order seq: expected ${state.seq + 1}`)
   assert(event.expectedRevision === state.revision, `stale revision: expected ${state.revision}`)
-  const runs = { ...state.runs }, aliases = { ...state.aliases }, generations = { ...state.generations }, lineage = { ...state.lineage }
+  const runs = dictionary(state.runs), aliases = dictionary(state.aliases), generations = dictionary(state.generations), lineage = dictionary(state.lineage)
   const current = runs[event.runId]
   const requireRun = (): FusionRun => current ?? invalid('unknown run')
   const changeRun = (patch: Partial<FusionRun>): void => { runs[event.runId] = { ...requireRun(), ...patch, revision: requireRun().revision + 1 } }
@@ -115,9 +129,11 @@ export function reduceLifecycle(state: LifecycleState, event: LifecycleEvent): L
   const makeRun = (data: Created | Forked, status: RunStatus, agentIds: readonly string[] = []): void => {
     assert(!current && !aliases[data.hostSessionId], 'run or session alias already exists')
     assert(Boolean(data.taskId && data.budgetId), 'task and budget identities required')
+    assert(!data.branchId || !Object.values(runs).some(r => r.branchId === data.branchId), 'branch identity must be unique')
     assert(!Object.values(runs).some(r => r.taskId === data.taskId || r.budgetId === data.budgetId), 'task/budget identity must be unique')
     runs[data.runId] = { id: data.runId, hostSessionId: data.hostSessionId, branchId: data.branchId, taskId: data.taskId,
-      mode: data.mode, status, revision: 1, budgetId: data.budgetId, agentIds, pendingApprovalIds: [], activeLeaseIds: [], hasActivated: false }
+      mode: data.mode, status, revision: 1, budgetId: data.budgetId, agentIds: [...agentIds], currentGenerationIds: dictionary(), createdSeq: event.seq,
+      pendingApprovalIds: [], activeLeaseIds: [], hasActivated: false }
     aliases[data.hostSessionId] = { hostSessionId: data.hostSessionId, runId: data.runId, branchId: data.branchId,
       ...(data.type === 'SESSION_FORKED' ? { forkPointSeq: data.forkPointSeq } : {}), selectionStatus: 'INACTIVE', revision: 1 }
   }
@@ -127,7 +143,7 @@ export function reduceLifecycle(state: LifecycleState, event: LifecycleEvent): L
       const source = runs[event.sourceRunId]
       assert(source?.hostSessionId === event.sourceHostSessionId, 'fork source ownership mismatch')
       assert(event.branchId && !lineage[event.branchId] && event.branchId !== source.branchId, 'fork branch identity conflict')
-      assert(Number.isSafeInteger(event.forkPointSeq) && event.forkPointSeq >= 0 && event.forkPointSeq <= state.seq, 'invalid fork point')
+      assert(Number.isSafeInteger(event.forkPointSeq) && event.forkPointSeq >= source.createdSeq && event.forkPointSeq <= state.seq, 'invalid fork point')
       assert(event.agentId && !Object.values(runs).some(r => r.agentIds.includes(event.agentId)), 'fork agent identity conflict')
       makeRun(event, 'SUSPENDED', [event.agentId])
       lineage[event.branchId] = { branchId: event.branchId, parentRunId: source.id, parentBranchId: source.branchId, forkPointSeq: event.forkPointSeq }
@@ -158,39 +174,61 @@ export function reduceLifecycle(state: LifecycleState, event: LifecycleEvent): L
       assert(!generations[event.generationId], 'generation id already exists')
       assert(event.agentId && event.sessionId && event.route.provider && event.route.model && event.route.capabilityDigest, 'incomplete generation')
       const predecessors = Object.values(generations).filter(g => g.runId === event.runId && g.agentId === event.agentId)
-      assert(predecessors.every(g => g.status === 'RETIRED'), 'agent has unretired generation')
+      // Prepare may overlap an old draining generation; activation still requires current generation retirement.
+      assert(predecessors.every(g => g.status === 'RETIRED' || g.status === 'DRAINING'), 'agent has non-draining generation')
       assert(event.epoch === Math.max(0, ...predecessors.map(g => g.epoch)) + 1, 'stale generation epoch')
       assert(owner.status === 'RUNNING', 'run is not active')
-      generations[event.generationId] = { id: event.generationId, runId: event.runId, agentId: event.agentId, sessionId: event.sessionId, route: event.route, epoch: event.epoch, status: 'PREPARING' }
+      generations[event.generationId] = { id: event.generationId, runId: event.runId, agentId: event.agentId, sessionId: event.sessionId, route: { ...event.route }, epoch: event.epoch, status: 'PREPARING' }
       changeRun({ agentIds: owner.agentIds.includes(event.agentId) ? owner.agentIds : [...owner.agentIds, event.agentId] })
       break
     }
     case 'GENERATION_ACTIVATED':
     case 'GENERATION_DRAINING':
     case 'GENERATION_RETIRED':
+    case 'GENERATION_PREPARATION_ABORTED':
+    case 'GENERATION_DRAIN_CANCELLED':
     case 'GENERATION_CALLBACK': {
       const gen = generations[event.generationId]
       assert(gen?.runId === event.runId, 'generation ownership mismatch')
       if (event.type === 'GENERATION_CALLBACK') {
-        assert(gen.status === 'ACTIVE' && requireRun().status === 'RUNNING' && requireRun().currentGenerationId === gen.id, 'stale generation callback fenced')
+        assert(gen.status === 'ACTIVE' && requireRun().status === 'RUNNING' && requireRun().currentGenerationIds[gen.agentId] === gen.id, 'stale generation callback fenced')
         changeRun({}); break
+      }
+      if (event.type === 'GENERATION_PREPARATION_ABORTED') {
+        assert(gen.status === 'PREPARING' && requireRun().currentGenerationIds[gen.agentId] !== gen.id, 'cannot abort committed preparation')
+        // If another generation is still draining, it remains current and can be resumed separately.
+        generations[gen.id] = { ...gen, status: 'RETIRED' }
+        changeRun({})
+        break
+      }
+      if (event.type === 'GENERATION_DRAIN_CANCELLED') {
+        assert(gen.status === 'DRAINING' && requireRun().currentGenerationIds[gen.agentId] === gen.id,
+          'cannot resume a non-current or committed-away generation')
+        assert(!Object.values(generations).some(g => g.runId === gen.runId && g.agentId === gen.agentId && g.id !== gen.id && g.status === 'PREPARING'),
+          'cannot resume while replacement is preparing')
+        generations[gen.id] = { ...gen, status: 'ACTIVE' }
+        changeRun({})
+        break
       }
       const expected = event.type === 'GENERATION_ACTIVATED' ? 'PREPARING' : event.type === 'GENERATION_DRAINING' ? 'ACTIVE' : 'DRAINING'
       assert(gen.status === expected, `illegal generation transition from ${gen.status}`)
       if (event.type === 'GENERATION_ACTIVATED') {
-        assert(requireRun().status === 'RUNNING' && !requireRun().currentGenerationId, 'current generation already owned')
-        changeRun({ currentGenerationId: gen.id })
+        assert(requireRun().status === 'RUNNING' && !requireRun().currentGenerationIds[gen.agentId], 'current generation already owned')
+        changeRun({ currentGenerationId: gen.id, currentGenerationIds: dictionary({ ...requireRun().currentGenerationIds, [gen.agentId]: gen.id }) })
       } else if (event.type === 'GENERATION_RETIRED') {
-        assert(requireRun().currentGenerationId === gen.id, 'retiring non-current generation')
-        changeRun({ currentGenerationId: undefined })
+        assert(requireRun().currentGenerationIds[gen.agentId] === gen.id, 'retiring non-current generation')
+        const next = dictionary(requireRun().currentGenerationIds)
+        delete next[gen.agentId]
+        changeRun({ currentGenerationId: requireRun().currentGenerationId === gen.id ? undefined : requireRun().currentGenerationId,
+          currentGenerationIds: next })
       } else changeRun({})
       generations[gen.id] = { ...gen, status: event.type === 'GENERATION_ACTIVATED' ? 'ACTIVE' : event.type === 'GENERATION_DRAINING' ? 'DRAINING' : 'RETIRED' }
       break
     }
     default: invalid('unknown event type')
   }
-  return { revision: state.revision + 1, seq: event.seq, runs, aliases, generations, lineage,
-    appliedEvents: { ...state.appliedEvents, [event.eventId]: fingerprint } }
+  return deepFreeze({ revision: state.revision + 1, seq: event.seq, runs, aliases, generations, lineage,
+    appliedEvents: dictionary({ ...state.appliedEvents, [event.eventId]: fingerprint }) })
 }
 export function replayLifecycle(events: readonly LifecycleEvent[], initial = emptyLifecycleState()): LifecycleState {
   return events.reduce(reduceLifecycle, initial)
