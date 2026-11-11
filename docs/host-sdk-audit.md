@@ -70,3 +70,23 @@ replayable Host fixture). A compatible `DSHX_HARNESS` source checkout is a prere
 `pnpm run test:host` and `pnpm run build` (`benchmark/baselines/a01-baseline-receipt.md:148-172`);
 compiled Desktop JS can still be statically reviewed without it. **Neither Host command was run for
 this document correction**. Do not infer unobserved Host behaviour or rc.2/rc.5 compatibility from this audit.
+
+## A04 — explicit capability admission (pure input, not Host certification)
+
+`src/host-capabilities/index.ts` exports `probeHostCapabilities(input)` and `requireHostOperation(report, operation)`.
+The probe accepts an **externally supplied, independently verified** `sdkVersion` plus individual `observed` evidence booleans; **it does not discover Host methods, install hooks, or validate that the caller told the truth**. All missing / false prerequisites are rejected. A denied operation raises `HOST_CAPABILITY_DENIED`, never quietly pretends the operation succeeded. The only safe downgrade is read-only `session.inspect` in `degraded` metadata-only mode when session reads are not established; `effects.observe` likewise never grants replay authority. This gate is a reusable contract for a later, real Host adapter—not a deployed integration.
+
+| Requested operation | Required observed evidence | Failure behavior |
+|---|---|---|
+| `session.fork` | `sessionFork`, `forkLineage` | Reject; no binding copy or source-id inheritance assumption |
+| `session.rebind` | `sessionRebind`, `rebindAtomic` | Reject; no speculative reattachment |
+| `lifecycle.transition` | `lifecycleEvents`, `lifecycleOrdering`, `sessionRebind`, `rebindAtomic` | Reject; preserve existing state |
+| `approval.enforce` | `approvalRequest`, `approvalTurnOpen` | Reject; approval is not presumed to work outside an open turn |
+| `compaction.execute` | `compactionControl`, `compactionTransaction` | Reject; routing is not transaction ownership |
+| `effects.replay` | `effectObservation`, `effectOutcomeKnown`, `effectIdempotency` | Reject unknown/non-idempotent effects; never auto-replay |
+| `effects.observe` | `effectObservation` | Reject absent observer; cannot imply approval or replay |
+| `session.inspect` | optional `sessionRead` | Metadata-only read-only degraded result if absent |
+
+**Version gate:** Exact `0.2.1-rc.2` reports `desktop-rc2`; exact `0.2.1-rc.5` reports `sdk-rc5`; other/missing values report `unknown` and deny mutations even if a caller claims features. Neither version is automatically granted an API: rc.2 Desktop packages are compiled-runtime *static evidence*, and rc.5 SDK declarations are *type evidence*. rc.2 may be admitted by this **simulation** only when every prerequisite is explicitly supplied as true; this is not a successful runtime test. Historical `SessionStore.fork`/lineage evidence (table #2) is not atomic session rebind; compaction route hooks (table #5) are not compaction transaction ownership; approval `request()` requires an open turn (table #6); tool events are not an idempotency ledger (table #6). No guessed SDK method is invoked.
+
+**Outstanding Host contract / verification work:** Provide a real, version-specific Host runtime adapter with an independently tested fork-lineage guarantee, atomic/fenced rebind or official generation restoration, lifecycle ordering, compaction transaction ownership, and effect outcome/idempotency ledger. Probe unit tests use hand-written capability inputs, not a rc.2/rc.5 Host fixture. Real Host, GUI, provider, crash, and privilege-boundary tests remain **NOT VERIFIED**. For unsupported Hosts present an explicit error/restricted behavior, not silent fallback; no host compatibility certification is implied by passing these tests.
