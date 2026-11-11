@@ -147,6 +147,22 @@ export interface BudgetUsageEntry {
   inputTokens: number; outputTokens: number; cacheReadTokens: number
   costMicros: number; status: 'COMPLETED' | 'FAILED' | 'CANCELLED'
 }
+export interface CacheEntryRecord {
+  runId: FusionRunId; generationId: AgentGenerationId; cacheKey: string
+  savedCostMicros: number; keepaliveCostMicros: number; expireAt: number
+  policyVersion: string; keepaliveActive: boolean
+}
+type CacheEntryRecorded = {
+  type: 'CACHE_ENTRY_RECORDED'; runId: FusionRunId; generationId: AgentGenerationId; cacheKey: string
+  savedCostMicros: number; keepaliveCostMicros: number; expireAt: number; policyVersion: string
+}
+type CacheKeepaliveTick = {
+  type: 'CACHE_KEEPALIVE_TICK'; runId: FusionRunId; generationId: AgentGenerationId; cacheKey: string
+  tickCostMicros: number; savingsRatio: number; cachedTokens: number
+}
+type CacheKeepaliveStopped = {
+  type: 'CACHE_KEEPALIVE_STOPPED'; runId: FusionRunId; generationId: AgentGenerationId; cacheKey: string; reason: string
+}
 type BudgetReserved = {
   type: 'BUDGET_RESERVED'; runId: FusionRunId; budgetId: string; hardCostMicros: number
   maxCalls?: number; maxRetries?: number
@@ -193,7 +209,7 @@ type TransitionRolledBack = { type: 'TRANSITION_ROLLED_BACK'; runId: FusionRunId
 type TransitionEvents = TransitionCheckpointed | TransitionCommitted | TransitionRolledBack
 
 export type LifecycleEvent = { readonly schemaVersion: 1; readonly eventId: string; readonly seq: number; readonly expectedRevision: number } &
-  (Created | Forked | Bound | RunChange | Prepared | GenerationChange | SwitchCommitted | EffectIntent | EffectTransition | TransitionEvents | AuthorityIssued | AssignmentCreated | AssignmentBriefRevised | AssignmentReported | AssignmentCompleted | AssignmentFailed | AssignmentTakeover | ContextCheckpointed | BudgetReserved | BudgetCallReserved | BudgetReservationSettled | BudgetOverrunApproved)
+  (Created | Forked | Bound | RunChange | Prepared | GenerationChange | SwitchCommitted | EffectIntent | EffectTransition | TransitionEvents | AuthorityIssued | AssignmentCreated | AssignmentBriefRevised | AssignmentReported | AssignmentCompleted | AssignmentFailed | AssignmentTakeover | ContextCheckpointed | BudgetReserved | BudgetCallReserved | BudgetReservationSettled | BudgetOverrunApproved | CacheEntryRecorded | CacheKeepaliveTick | CacheKeepaliveStopped)
 export interface LifecycleState {
   readonly revision: number
   readonly seq: number
@@ -207,6 +223,7 @@ export interface LifecycleState {
   readonly assignments: Readonly<Record<string, AssignmentRecord>>
   readonly reports: Readonly<Record<string, AgentReportRecord>>
   readonly budgets: Readonly<Record<string, BudgetRecord>>
+  readonly caches: Readonly<Record<string, CacheEntryRecord>>
   readonly checkpoints: Readonly<Record<string, ContextCheckpointRef>>
   /** Event id -> canonical payload; replay duplicate with differing payload is a conflict. */
   readonly appliedEvents: Readonly<Record<string, string>>
@@ -222,9 +239,14 @@ function deepFreeze<T>(value: T): T {
 const stable = (value: unknown): string => JSON.stringify(value, (_key, item: unknown) =>
   item && typeof item === 'object' && !Array.isArray(item)
     ? Object.fromEntries(Object.entries(item as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b))) : item)
-export const emptyLifecycleState = (): LifecycleState => deepFreeze({ revision: 0, seq: 0, runs: dictionary(), aliases: dictionary(), generations: dictionary(), lineage: dictionary(), effects: dictionary(), transitions: dictionary(), authorities: dictionary(), assignments: dictionary(), reports: dictionary(), checkpoints: dictionary(), budgets: dictionary(), appliedEvents: dictionary() })
+export const emptyLifecycleState = (): LifecycleState => deepFreeze({ revision: 0, seq: 0, runs: dictionary(), aliases: dictionary(), generations: dictionary(), lineage: dictionary(), effects: dictionary(), transitions: dictionary(), authorities: dictionary(), assignments: dictionary(), reports: dictionary(), checkpoints: dictionary(), budgets: dictionary(), caches: dictionary(), appliedEvents: dictionary() })
 const invalid = (reason: string): never => { throw new Error(`lifecycle conflict: ${reason}`) }
 function assert(condition: unknown, reason: string): asserts condition { if (!condition) invalid(reason) }
+function requireCache(caches: Record<string, CacheEntryRecord>, key: string): CacheEntryRecord {
+  const record = caches[key]
+  if (!record) invalid(`cache entry ${key} unknown`)
+  return record
+}
 function requireBudget(budgets: Record<string, BudgetRecord>, budgetId: string): BudgetRecord {
   const record = budgets[budgetId]
   if (!record) invalid(`budget ${budgetId} unknown`)
@@ -255,7 +277,7 @@ export function reduceLifecycle(state: LifecycleState, event: LifecycleEvent): L
   }
   assert(event.seq === state.seq + 1, `out-of-order seq: expected ${state.seq + 1}`)
   assert(event.expectedRevision === state.revision, `stale revision: expected ${state.revision}`)
-  const runs = dictionary(state.runs), aliases = dictionary(state.aliases), generations = dictionary(state.generations), lineage = dictionary(state.lineage), effects = dictionary(state.effects), transitions = dictionary(state.transitions), authorities = dictionary(state.authorities), assignments = dictionary(state.assignments), reports = dictionary(state.reports), checkpoints = dictionary(state.checkpoints), budgets = dictionary(state.budgets)
+  const runs = dictionary(state.runs), aliases = dictionary(state.aliases), generations = dictionary(state.generations), lineage = dictionary(state.lineage), effects = dictionary(state.effects), transitions = dictionary(state.transitions), authorities = dictionary(state.authorities), assignments = dictionary(state.assignments), reports = dictionary(state.reports), checkpoints = dictionary(state.checkpoints), budgets = dictionary(state.budgets), caches = dictionary(state.caches)
   const current = runs[event.runId]
   const requireRun = (): FusionRun => current ?? invalid('unknown run')
   const requireEffect = (effectId: string): EffectRecord => effects[effectId] ?? invalid('unknown effect')
@@ -626,6 +648,37 @@ export function reduceLifecycle(state: LifecycleState, event: LifecycleEvent): L
       changeRun({})
       break
     }
+    case 'CACHE_ENTRY_RECORDED': {
+      const key = `${event.runId}|${event.generationId}|${event.cacheKey}`
+      assert(generations[event.generationId] !== undefined && generations[event.generationId].runId === event.runId,
+        'cache generation mismatch')
+      assert(!caches[key], 'cache entry already exists')
+      assert(Number.isSafeInteger(event.savedCostMicros) && event.savedCostMicros >= 0, 'cache savings must be a non-negative integer')
+      assert(Number.isSafeInteger(event.keepaliveCostMicros) && event.keepaliveCostMicros >= 0, 'cache keepalive cost must be a non-negative integer')
+      assert(Number.isSafeInteger(event.expireAt), 'cache expiry must be an integer')
+      assert(event.policyVersion.length > 0, 'cache policy version required')
+      caches[key] = { runId: event.runId, generationId: event.generationId, cacheKey: event.cacheKey,
+        savedCostMicros: event.savedCostMicros, keepaliveCostMicros: event.keepaliveCostMicros,
+        expireAt: event.expireAt, policyVersion: event.policyVersion, keepaliveActive: true }
+      changeRun({})
+      break
+    }
+    case 'CACHE_KEEPALIVE_TICK': {
+      const record = requireCache(caches, `${event.runId}|${event.generationId}|${event.cacheKey}`)
+      assert(record.keepaliveActive, 'keepalive stopped for this cache entry')
+      assert(Number.isSafeInteger(event.tickCostMicros) && event.tickCostMicros >= 0, 'keepalive tick cost must be a non-negative integer')
+      caches[`${event.runId}|${event.generationId}|${event.cacheKey}`] = { ...record,
+        keepaliveCostMicros: record.keepaliveCostMicros + event.tickCostMicros }
+      changeRun({})
+      break
+    }
+    case 'CACHE_KEEPALIVE_STOPPED': {
+      const record = requireCache(caches, `${event.runId}|${event.generationId}|${event.cacheKey}`)
+      assert(event.reason.length > 0, 'cache stop reason required')
+      caches[`${event.runId}|${event.generationId}|${event.cacheKey}`] = { ...record, keepaliveActive: false }
+      changeRun({})
+      break
+    }
     case 'AUTHORITY_ISSUED': {
       // An authority profile is bound to exactly one generation at preparation time and is
       // immutable afterwards; Worker/Lead/Reviewer resume from this profile, never broader.
@@ -640,7 +693,7 @@ export function reduceLifecycle(state: LifecycleState, event: LifecycleEvent): L
     }
     default: invalid('unknown event type')
   }
-  return deepFreeze({ revision: state.revision + 1, seq: event.seq, runs, aliases, generations, lineage, effects, transitions, authorities, assignments, reports, checkpoints, budgets,
+  return deepFreeze({ revision: state.revision + 1, seq: event.seq, runs, aliases, generations, lineage, effects, transitions, authorities, assignments, reports, checkpoints, budgets, caches,
     appliedEvents: dictionary({ ...state.appliedEvents, [event.eventId]: fingerprint }) })
 }
 export function replayLifecycle(events: readonly LifecycleEvent[], initial = emptyLifecycleState()): LifecycleState {

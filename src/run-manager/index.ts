@@ -176,6 +176,13 @@ export class RunManager {
           entry.inputTokens, entry.cacheReadTokens, entry.outputTokens, entry.costMicros / 1_000_000, entry.status)
       }
     }
+    const caches = this.db.prepare(`INSERT INTO fusion_cache (run_id, generation_id, cache_key, saved_cost, keepalive_cost, expire_at, policy_version)
+      VALUES (?,?,?,?,?,?,?) ON CONFLICT(run_id, generation_id, cache_key) DO UPDATE SET
+      saved_cost=excluded.saved_cost, keepalive_cost=excluded.keepalive_cost, expire_at=excluded.expire_at, policy_version=excluded.policy_version`)
+    for (const cache of Object.values(state.caches)) {
+      caches.run(cache.runId, cache.generationId, cache.cacheKey, cache.savedCostMicros / 1_000_000,
+        cache.keepaliveCostMicros / 1_000_000, cache.expireAt, cache.policyVersion)
+    }
     const transitions = this.db.prepare(`INSERT INTO fusion_transitions (id, run_id, agent_id, from_gen, to_gen, phase, expected_revision, error, created_at, updated_at)
       VALUES (?,?,?,?,?,?,?,?,?,?)
       ON CONFLICT(id) DO UPDATE SET from_gen=excluded.from_gen,to_gen=excluded.to_gen,phase=excluded.phase,error=excluded.error,updated_at=excluded.updated_at`)
