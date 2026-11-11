@@ -30,7 +30,6 @@
 | 项 | 计划依据 | 缺失条件 |
 |---|---|---|
 | `build` 门禁 | scripts/build.mjs | DSHX_HARNESS 检出缺 `tools/dshx/src/client-build.js`，且要求 Host 0.2.0-rc.2（实有 0.1.6-alpha.2） |
-| compat 门禁（vitest.compat.config.mts） | 仓库 | DSHX_COMPACT_SAVIOUR 目标插件（含 Controller/CompactionRouteRegistry 的旧版源码）本机不存在；已装 dsh-model-fusion@0.2.11 无这些符号 |
 | 双 Host 版本验收（rc.2/rc.5） | §15 | 需真实 Desktop Host 两版本运行 |
 | 三臂基准（强 Direct / 既有 Fusion / Fusion Next）与多 seed | §15 | 需真实 Provider 与预算受控执行 |
 | 隐藏验证任务集、成功率/成本/恢复率指标 | §15 | 同上 |
@@ -46,6 +45,14 @@
 - 对照实验：在验收基线 `8861970` 上建临时 worktree（软链同一外部 node_modules）复跑，失败集合与 HEAD **完全一致**（diff 为空，29 项逐一相同）——即这 29 项失败为本仓原生测试与该 Host 检出之间的**既有差距，非本会话回归**；本会话从未改动 `src/host/coordinator.ts`、`native-tests/*`（git log 8861970..HEAD 为空）。
 - 失败模式样例：`Agent preset binding requires a scoped context`（FusionCoordinator 装配语义差异）、frozen compactor 路由、delegation preflight——均为 0.2.0-rc.2 语义（见 RELEASE-0.2.0-rc.2.md）在 0.1.6-alpha.2 Host 上的不匹配。
 - 结论：**test:host = 已验证执行，零回归；29 项既有失败属宿主版本偏斜**，待 0.2.0-rc.2 Host 检出后复验。
+
+### 2.2 compat 门禁已跑通（新增验证，2026-11-11）
+
+`DSHX_COMPACT_SAVIOUR` 目标插件源码已在 npm 上定位并取得：**`dsh-compact-saviour@0.2.9`**（含 `src/controller.ts` 的 `class Controller` 与 `src/routes.ts` 的 `CompactionRouteRegistry`；dsh-model-fusion 各版本均无此符号，属不同插件）。解包至 `~/dsh/插件/compat-fixtures/dsh-compact-saviour`（仓库外，package.json sha256 `8af6ab42…`），随后：
+
+- 命令：`DSHX_HARNESS=$HOME/dsh/releases/0.1.6-alpha.2 DSHX_COMPACT_SAVIOUR=~/dsh/插件/compat-fixtures/dsh-compact-saviour pnpm exec vitest run --config vitest.compat.config.mts`
+- 结果：`compat-tests/session-routing.spec.ts` **10/10 通过**（1.15s）——会话路由兼容语义（模型选择投影 + saviour Controller/CompactionRouteRegistry 对接）在真实插件源码 + 固定 Host 检出下验证通过。
+- 收据：`benchmark/baselines/logs/compat-run-20261111.log`（commit `4860c6d`）。
 
 ## 3. 发布判定
 
