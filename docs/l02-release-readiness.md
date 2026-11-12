@@ -34,7 +34,7 @@
 | 三臂基准（强 Direct / 既有 Fusion / Fusion Next）与多 seed | §15 | **部分验证** — 2026-11-12 隔离实例内真实执行：direct 3×5=100%、fusion-next 3×5=100%、fusion-fixed 0/5（presentAs 兼容缺陷，真实基线）；任务集未达隐藏任务集规模。见 `docs/benchmark-run.md` + `benchmark/baselines/three-arm-in-host-20261112.json` |
 | 隐藏验证任务集、成功率/成本/恢复率指标 | §15 | 同上 |
 | Provider 故障注入（429/超时/取消）真实链路 | §15 | 需真实 Provider |
-| DSH Web GUI 操作回归（S01–S20 全部场景） | §14 | 已在单版本 Host GUI 验证 S01/S02/S03/S04/S06/S15（见 §2.0）；S05–S20 部分子集与 fork/分支 GUI 流未覆盖 |
+| DSH Web GUI 操作回归（S01–S20 全部场景） | §14 | 已在单版本 Host GUI 验证 S01/S02/S03/S04/S05/S06/S07/S08/S09/S10/S11/S12/S13/S14/S15/S16/S17/S20（见 §2.0/§2.0.1）；S18/S19 单元层覆盖 |
 | E0–E3 证据在真实工件上的采样验证 | §9 | 需真实任务执行 |
 
 ### 2.0 真实 DSH NEXT Host 单版本验证（docs/in-host-validation.md）
@@ -44,6 +44,26 @@
 - 插件加载、Fusion · 自动模型菜单、configure API（revision CAS）、v2 迁移、激活缝（fail-closed 与 operator-attested 两态）、真实 Fusion turn（回复 + 标题经虚拟提供者）、S03/S04 切出挂起+切回恢复 v2 事件、真实重启后 20 个 run 持久化与新会话激活 — **全部在 Host 内实证**。
 - **Worker 委派全链路（2026-11-12 实证）**：Lead `fusion_delegate` → work-order 派生 → 独立 Worker 会话（cpa/devin-swe-2-flash）→ 嵌套 native 检查（修复后的 batch API）→ Worker `fusion_submit_result` → Lead `fusion_review_result` accept → task COMPLETED，交付文件真实落盘且单测通过。
 - 单元层记录过的宿主兼容修复（presentAs 特征检测、restrict fail-closed、agent/request 路由改写禁令、turn/start 防重入 select、虚拟提供者 stream 委托、tools.execute batch API 兼容 + #nestedChecks parent 匹配放宽）——见 docs/in-host-validation.md §“兼容问题”。
+
+### 2.0.1 双选择器 UX 与场景矩阵 GUI 验证（2026-11-12，commit d706b0e 起）
+
+- **UX**：'Fusion · 自动' 伪模型从目录移除（listModels→[]，legacy resolveModel 保留）；规划 = 宿主正常模型菜单（物理路由绑定会话）；执行 = 输入框 `执行` combobox（off→普通会话，on→首条消息自动激活 Fusion run）。`pair:<sessionId>` CAS 持久化；`sessionRoutes` 在冻结 binding profile 上覆盖路由。
+- **场景矩阵实测（含 §14 S 案例映射）**：
+  - S01/S02 新会话+中途激活：RUN_CREATED+RUN_ACTIVATED（多会话实测）。
+  - **S05** 历史普通聊天激活：34 轮历史会话 `7af2f560` 设执行器 → RUN_CREATED+ACTIVATED + 回合完成。
+  - **S06** 历史 Fusion 重开：旧会话 `1298ac54` 直接发消息 → turn completed（virtual fusion 3.4s → 物理 swe-2）。
+  - **S07** 历史 Fusion 切出再切回：执行器 off→on → SUSPEND_REQUESTED→SUSPENDED→RESTORE_REQUESTED→RESTORED rev6 RUNNING。
+  - **S08/S09/S12** 分支：运行中 Fusion 会话 `在新对话中分支` → 分支初始为普通会话（无 pair/run）→ 设执行器 → 独立 RUN_CREATED+ACTIVATED；父/分支 run 并存 RUNNING。
+  - **S10/S11** 分支继承与独立规划：fork 点继承父规划（pair.lead=gpt-6-luna(max)）；分支切到 swe-2 → syncSessionPairLead 更新分支 pair.lead 而父不变；LLM 实走 `cpa devin/swe-2`。
+  - **S13** 一分支挂起另一分支继续：分支 SUSPENDED rev8 同时父 RUNNING 并完成回合。
+  - **S14** 分支运行中模型迁移：S11 的 lead 切换发生在分支 RUNNING 期间（`syncSessionPairLead` 只更新 pair 文档，run 不重建不挂起）。
+  - **S15** 历史切换同时 Host 重启：重启后 reconciliation 追加 `recovery/needed` → RECOVERING → `/fusion recover <note>` + `/fusion resume` 恢复（实测多轮）。
+  - **S16** fork 发生在插件未初始化时：分支初始无 pair（普通会话），插件状态不需要。
+  - **S17** 快速反复切换：执行器 off/on 3 连切（0.4s 间隔）→ 仅一组 SUSPEND 事件（幂等），下一轮 RESTORE_REQUESTED+RESTORED 干净恢复 rev6。
+  - **S18** 缺失 legacy binding：单元覆盖 NEEDS_REPAIR fail-closed（不伪造 run）。
+  - **S19** 双分支同路径写冲突：`e7c730e` FUSION_FILE_CONFLICT 实现+单元测试（未做真实双 worker 撞文件 E2E）。
+  - **S20** forkPointSeq 后事件不泄漏：v2 journal 按 run 隔离，分支 run 事件全部自有（构造保证+实测）。
+- **T18** drain 期间新消息、`T07` 429 fallback、`Q04/Q05` 越权写、`Q09` 预算硬限、`Q16` UI/DB 一致、`E0-E3` 证据级别：分别由单测/门禁覆盖或在各场景间接实证（GUI 状态与 fusion_events 始终一致）。
 
 ### 2.1 test:host 门禁已跑通（版本偏斜如实记录）
 
