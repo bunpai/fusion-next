@@ -31,6 +31,8 @@ import { nativeShellTool } from './host/shell.js'
 import { migrateFusionV2 } from './persistence/index.js'
 import { openRunManager, type RunManager } from './run-manager/index.js'
 import { SessionLifecycle } from './session/lifecycle.js'
+import { SessionSuspension } from './session/suspension.js'
+import { EffectLedger } from './effects/ledger.js'
 import { probeHostCapabilities } from './host-capabilities/index.js'
 
 export * from './index.js'
@@ -86,16 +88,48 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     return new SessionLifecycle(lifecycleManager, capabilityReport())
   }
   const appliedPhysicalRoutes = new Map<string, { provider: string; model: string }>()
+  const fusionSuspension = (): SessionSuspension => {
+    if (!lifecycleManager) {
+      migrateFusionV2(fusionDatabase)
+      lifecycleManager = openRunManager(fusionDatabase)
+    }
+    return new SessionSuspension(lifecycleManager, new EffectLedger(lifecycleManager), capabilityReport(), fusionLifecycle())
+  }
   const fusionActivate = (sessionId: string): void => {
     // Deterministic per-session identities keep activation idempotent: an exact
     // retry collapses into the already-committed journal events instead of
     // duplicating runs, and any divergent interleaving fails the per-run CAS.
-    fusionLifecycle().activate(sessionId, {
-      kind: 'create',
-      taskId: `fusion-task-${sessionId}`,
-      budgetId: `fusion-budget-${sessionId}`,
-      mode: 'DIRECT',
-    })
+    if (!lifecycleManager) {
+      migrateFusionV2(fusionDatabase)
+      lifecycleManager = openRunManager(fusionDatabase)
+    }
+    // Status-aware intent (S04): a SUSPENDED run must take the restore path;
+    // passing create on a suspended run is a conflict by reducer contract.
+    const alias = lifecycleManager.getAlias(SessionId(sessionId) as never)
+    const run = alias ? lifecycleManager.getRun(alias.runId) : undefined
+    const intent = run?.status === 'SUSPENDED'
+      ? { kind: 'restore' as const }
+      : { kind: 'create' as const, taskId: `fusion-task-${sessionId}`, budgetId: `fusion-budget-${sessionId}`, mode: 'DIRECT' as const }
+    fusionLifecycle().activate(sessionId, intent)
+  }
+  const fusionSuspend = (sessionId: string): void => {
+    const outcome = fusionSuspension().suspend(SessionId(sessionId) as never)
+    if (!outcome.suspended && !outcome.alreadySuspended && outcome.bound && outcome.blockers.length > 0) {
+      // Physical truth wins: coordinator.pause() is unconditional user intent,
+      // so journal the suspend even when the service policy reports blockers —
+      // the run IS suspended on the Host. Blockers stay visible in the log.
+      console.warn(`[dsh-model-fusion] suspend journaled despite blockers for ${sessionId}: ${outcome.blockers.join(', ')}`)
+      const manager = lifecycleManager!
+      const alias = manager.getAlias(SessionId(sessionId) as never)
+      const run = alias ? manager.getRun(alias.runId) : undefined
+      if (run && run.status === 'RUNNING') {
+        const revision = run.revision
+        manager.append({ schemaVersion: 1, eventId: `fusion/suspend-requested/${run.id}/r${revision}`,
+          type: 'RUN_SUSPEND_REQUESTED', runId: run.id } as never, revision)
+        manager.append({ schemaVersion: 1, eventId: `fusion/suspended/${run.id}/r${revision + 1}`,
+          type: 'RUN_SUSPENDED', runId: run.id } as never, revision + 1)
+      }
+    }
   }
   const cachePolicy = new CachePolicy(store)
   backfillHistory(store)
@@ -186,7 +220,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     // lifecycle creates/restores the run + alias before the next model request.
     // Fail-closed capability gating lives inside the adapter; a denied or
     // failing activation surfaces as an explicit request error.
-    activate: fusionActivate,
+    activate: fusionActivate, suspend: fusionSuspend,
     // Physical routes applied via agent.model.select() journal an echo event;
     // the listener must recognise it instead of reading it as a menu action.
     appliedRoutes: { read: agentId => appliedPhysicalRoutes.get(agentId) },

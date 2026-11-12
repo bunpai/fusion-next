@@ -89,6 +89,13 @@ export function installNativeFusionSelection(ctx: Context, input: {
    * chain (scopes → coordinator options → entry).
    */
   appliedRoutes?: { read(agentId: string): { provider: string; model: string } | undefined }
+  /**
+   * S03 seam: a user switch away from Fusion suspends the journal-backed run.
+   * Called when the effective selection leaves Fusion while a binding is
+   * selected; the caller journals RUN_SUSPEND_REQUESTED/RUN_SUSPENDED (or the
+   * blockers that make the transition visible). Best-effort like activate.
+   */
+  suspend?(sessionId: string): void
 }): () => void {
   const pending = new Map<string, Promise<void>>()
   const failures = new Map<string, string>()
@@ -136,6 +143,13 @@ export function installNativeFusionSelection(ctx: Context, input: {
       return
     }
     if (!selected(agent)) return
+    // Journal the physical suspend BEFORE pausing: the coordinator pause is
+    // unconditional user intent, so the v2 journal must reflect it even when
+    // the service-level blocker policy would defer. Errors block the next
+    // request the same way activation failures do.
+    if (input.suspend) {
+      try { input.suspend(agent.session.id) } catch (error) { failures.set(agent.id, String(error)) }
+    }
     const transition = (async () => {
       if (agent.status !== 'idle') await coordinator.pause(agent)
       await coordinator.clear(agent)
