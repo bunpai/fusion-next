@@ -34,8 +34,15 @@
 | 三臂基准（强 Direct / 既有 Fusion / Fusion Next）与多 seed | §15 | 需真实 Provider 与预算受控执行 |
 | 隐藏验证任务集、成功率/成本/恢复率指标 | §15 | 同上 |
 | Provider 故障注入（429/超时/取消）真实链路 | §15 | 需真实 Provider |
-| DSH Web GUI 操作回归（S01–S20 部分） | §14 | 需真实 Host GUI |
+| DSH Web GUI 操作回归（S01–S20 全部场景） | §14 | 已在单版本 Host GUI 验证 S01/S02/S03/S04/S06/S15（见 §2.0）；S05–S20 部分子集与 fork/分支 GUI 流未覆盖 |
 | E0–E3 证据在真实工件上的采样验证 | §9 | 需真实任务执行 |
+
+### 2.0 真实 DSH NEXT Host 单版本验证（docs/in-host-validation.md）
+
+在隔离的 `~/dsh/dsh-test-home` DSH_HOME 上运行 DSH NEXT 2.0.22-next（0.2.2-rc.1 内核）验证：
+
+- 插件加载、Fusion · 自动模型菜单、configure API（revision CAS）、v2 迁移、激活缝（fail-closed 与 operator-attested 两态）、真实 Fusion turn（回复 + 标题经虚拟提供者）、S03/S04 切出挂起+切回恢复 v2 事件、真实重启后 20 个 run 持久化与新会话激活 — **全部在 Host 内实证**。
+- 单元层记录过的宿主兼容修复（presentAs 特征检测、restrict fail-closed、agent/request 路由改写禁令、turn/start 防重入 select、虚拟提供者 stream 委托）——见 docs/in-host-validation.md §“兼容问题”。
 
 ### 2.1 test:host 门禁已跑通（版本偏斜如实记录）
 
