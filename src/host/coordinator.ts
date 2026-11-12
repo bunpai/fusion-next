@@ -86,6 +86,8 @@ export interface CoordinatorOptions {
   commandMaxSeconds?: number
   /** Test clock only; production retains the recovered fixed schedule. */
   keepaliveClock?: KeepaliveClock
+  /** Post-commit observer for durable task events; used by the v2 shadow journal. */
+  onTaskEvent?(taskId: TaskId, type: FusionEvent['type'], payload: unknown): void
 }
 interface RuntimeRecord {
   schemaVersion: 1
@@ -639,6 +641,7 @@ export class FusionCoordinator {
     const event = { schemaVersion: 1, id: randomUUID(), taskId: id, seq: state.seq + 1, revision: state.revision,
       createdAt: new Date().toISOString(), causeId: 'native-fusion', type, payload } as Extract<FusionEvent, { type: T }>
     const next = this.store.append(id, state.revision, [event])
+    try { this.options.onTaskEvent?.(id, type, payload) } catch { /* observers must never break the task */ }
     const parent = this.ctx.agents.get(NativeSessionId(next.parent))
     if (parent && this.scopes.get(parent)?.binding.taskId === id) this.scopes.refreshTools(parent)
     if (next.control.mode !== 'running' || next.control.budgetBlocked || next.control.recovering

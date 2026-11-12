@@ -34,6 +34,7 @@ import { SessionLifecycle } from './session/lifecycle.js'
 import { SessionSuspension } from './session/suspension.js'
 import { EffectLedger } from './effects/ledger.js'
 import { probeHostCapabilities } from './host-capabilities/index.js'
+import { V2Shadow } from './host/v2-shadow.js'
 
 export * from './index.js'
 
@@ -90,6 +91,16 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     return new SessionLifecycle(lifecycleManager, capabilityReport())
   }
   const appliedPhysicalRoutes = new Map<string, { provider: string; model: string }>()
+  // Lazy v2 shadow: created on first live task event once the v2 journal is open.
+  let v2Shadow: V2Shadow | undefined
+  const shadow = (): V2Shadow => {
+    if (!v2Shadow) {
+      migrateFusionV2(fusionDatabase)
+      lifecycleManager = openRunManager(fusionDatabase)
+      v2Shadow = new V2Shadow(lifecycleManager, store, () => defaultProfile)
+    }
+    return v2Shadow
+  }
   const fusionSuspension = (): SessionSuspension => {
     if (!lifecycleManager) {
       migrateFusionV2(fusionDatabase)
@@ -167,6 +178,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
       runtime = new FusionCoordinator(ctx, store, { profile, workerTools: config.workerTools ?? defaultWorkerTools,
         leadSandbox: config.leadSandbox, workerPolicy: config.workerPolicy,
         onPhysicalRouteSelected: (agentId, route) => appliedPhysicalRoutes.set(agentId, route),
+        onTaskEvent: (taskId, type, payload) => { try { shadow().handle(taskId, type, payload) } catch { /* shadow is non-fatal */ } },
         resumeAuthorization: binding => needsBudget(binding.profile) ? budget.check(effectiveRoutes(binding)).authorizationId : 'native-account',
         authorizeRequest: (_agent, binding) => {
           if (!needsBudget(binding.profile)) return
