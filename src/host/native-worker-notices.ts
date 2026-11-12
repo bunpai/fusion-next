@@ -47,7 +47,7 @@ export class NativeWorkerNotices {
     const artifact = this.store.putArtifact(binding.taskId, Buffer.from(JSON.stringify(original)), 'application/vnd.dsh-fusion.worker-notice+json')
     const submitted = Boolean((this.store.readDocument(`runtime:${binding.taskId}`)?.value as { submitted?: unknown } | undefined)?.submitted)
     const message = createUserMessage({ source: { kind: 'plugin:dsh-model-fusion', form: 'notice', summary: source.summary },
-      content: [{ type: 'text', text: `${source.summary}\n${workerSettlementGuidance(submitted)} Closing transcript is archived rather than repeated here. For missing failure details use fusion_read_evidence with id ${artifact.id}.\n${JSON.stringify({ childId: source.senderSessionId, originalMessageId: original.id, artifact })}` }] })
+      content: [{ type: 'text', text: `${source.summary}\n${workerSettlementGuidance(submitted)} The Worker's closing transcript — including raw command output — is archived rather than repeated here. Read it with fusion_read_evidence id ${artifact.id}, and call fusion_list_evidence to enumerate every task artifact before asking the Worker to repeat anything.\n${JSON.stringify({ childId: source.senderSessionId, originalMessageId: original.id, artifact })}` }] })
     this.store.writeDocument(id, 0, { schemaVersion: 1, taskId: binding.taskId, parentId: agent.id,
       childId: source.senderSessionId, originalMessageId: original.id, originalDigest, artifact, message } satisfies NoticeProjection)
     return message

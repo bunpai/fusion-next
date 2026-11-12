@@ -180,7 +180,7 @@ export class NativeFusionScopes {
           assembled: assembled.tools,
           allowlist: readOnlyTools,
           registry: scope.tools.schemas(agent),
-          always: role === 'worker' ? ['fusion_read_state', 'fusion_read_evidence', 'fusion_submit_result'] : [],
+          always: role === 'worker' ? ['fusion_read_state', 'fusion_read_evidence', 'fusion_list_evidence', 'fusion_submit_result'] : [],
         })
         if (projected.missing.length) throw new Error(fusionToolDiagnostic(projected.missing))
         return { ...assembled, variables: { ...(assembled.variables ?? {}), provider: route.provider, model: route.model }, tools: projected.tools }

@@ -60,11 +60,11 @@ import { readNativeEvidence } from './native-evidence.js'
 const textOutput = { schema: { type: 'string' as const }, render: (_args: unknown, text: string) => [{ type: 'text' as const, text }] }
 const stringList = { type: 'array' as const, items: { type: 'string' as const }, required: true as const }
 const optionalStringList = { type: 'array' as const, items: { type: 'string' as const } }
-const READ_TOOLS = new Set(['fusion_read_state', 'glob', 'grep', 'read', 'fusion_read_evidence', 'job_output'])
+const READ_TOOLS = new Set(['fusion_read_state', 'glob', 'grep', 'read', 'fusion_read_evidence', 'fusion_list_evidence', 'job_output'])
 const isRead = (exec: Readonly<ToolExecution>) => READ_TOOLS.has(exec.name)
   || exec.name === 'str_replace_editor' && (exec.arguments as { command?: unknown }).command === 'view'
-const FUSION_TOOLS = new Set(['fusion_read_state', 'fusion_delegate_text', 'fusion_explore', 'fusion_delegate', 'fusion_rework', 'fusion_wait', 'fusion_review_result', 'fusion_submit_result', 'fusion_takeover', 'fusion_finish_direct', 'fusion_read_evidence'])
-const WORKER_FUSION_TOOLS = new Set(['fusion_submit_result', 'fusion_read_state', 'fusion_read_evidence'])
+const FUSION_TOOLS = new Set(['fusion_read_state', 'fusion_delegate_text', 'fusion_explore', 'fusion_delegate', 'fusion_rework', 'fusion_wait', 'fusion_review_result', 'fusion_submit_result', 'fusion_takeover', 'fusion_finish_direct', 'fusion_read_evidence', 'fusion_list_evidence'])
+const WORKER_FUSION_TOOLS = new Set(['fusion_submit_result', 'fusion_read_state', 'fusion_read_evidence', 'fusion_list_evidence'])
 export interface CoordinatorOptions {
   profile: ResolvedProfile
   workerTools: readonly string[]
@@ -1901,6 +1901,13 @@ export class FusionCoordinator {
         const binding = this.#binding(agent, role)
         const bytes = readNativeEvidence(this.store, binding.taskId, args.id)
         return JSON.stringify({ id: args.id, ...evidencePage(bytes, args.offset, args.limit) })
+      } })),
+      scope.tools.register(defineTool({ name: 'fusion_list_evidence', description: 'List every evidence artifact owned by this task: worker closing transcripts, briefs, feedback, change manifests and check outputs (id, mediaType, bytes). Read any entry with fusion_read_evidence before asking the Worker to repeat output it already produced.',
+      parameters: {}, output: textOutput,
+      execute: async () => {
+        const binding = this.#binding(agent, role)
+        const artifacts = this.store.artifacts(binding.taskId).map(record => ({ id: record.id, mediaType: record.mediaType, bytes: record.bytes }))
+        return JSON.stringify({ artifacts, count: artifacts.length })
       } }))]
     dispose.push(scope.tools.register(defineTool({ name: 'fusion_submit_result', description: role === 'lead'
       ? 'Lead use only after fusion_takeover: submit your own correction so the frozen checks run again. To judge a Sidekick report, use fusion_review_result instead.'
