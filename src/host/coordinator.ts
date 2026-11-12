@@ -107,6 +107,9 @@ interface RuntimeRecord {
   background?: boolean
   submitted?: { summary: string; unresolved: string[]; status: WorkerReport['status'] }
   explorationSubmitted?: ExplorationReport
+  /** Bounded parallel lane: the parallel explore worker stages its submission
+   *  in its own slot so the primary worker's report cannot be clobbered. */
+  parallelSubmitted?: { summary: string; unresolved: string[]; status: WorkerReport['status'] }
   verification?: 'unverified' | 'partial' | 'verified'
   verificationReasons?: readonly string[]
   completedTurn?: number
@@ -558,7 +561,10 @@ export class FusionCoordinator {
       let instruction: string | undefined
       if (role === 'lead' && state.phase === 'REVIEWING') instruction = 'The current report has not been accepted. Inspect its evidence and call fusion_review_result; failed checks cannot be accepted. Use needs-decision for a genuine missing user decision.'
       else if (role === 'lead' && adaptiveWorkflow(binding) && state.phase === 'REWORK') instruction = 'Your review requires a correction. Send the specific feedback to the same Sidekick through fusion_rework; do not end the task before the correction and its checks. If a real user decision is missing, explain it explicitly.'
-      else if (role === 'worker' && state.currentWorkOrder && !this.#runtime(binding.taskId).submitted) instruction = 'Submit the current work through fusion_submit_result with its actual status and unresolved requirements. Prose alone cannot complete this work order.'
+      else if (role === 'worker' && (state.parallelChild === SessionId(agent.id) ? state.parallelOrder : state.currentWorkOrder)
+        && !(state.parallelChild === SessionId(agent.id) ? this.#runtime(binding.taskId).parallelSubmitted : this.#runtime(binding.taskId).submitted)) {
+        instruction = 'Submit the current work through fusion_submit_result with its actual status and unresolved requirements. Prose alone cannot complete this work order.'
+      }
       else if (role === 'lead' && !state.currentWorkOrder && this.workflow.deniedEffect(binding)) instruction = 'A requested effect was blocked and has not executed. Delegate it through fusion_delegate, or explain the blocker. This task cannot be recorded as completed by a text-only response.'
       if (!instruction) return
       if (!this.workflow.repairStop(agent, binding, role, instruction)) this.modelControl.failure(binding, role, {
@@ -909,8 +915,11 @@ export class FusionCoordinator {
       const problem = workerToolBriefProblem(this.store, binding.taskId, exec, this.#runtime(binding.taskId).briefRevision ?? 0)
       if (problem) return problem
     }
-    if (role === 'worker' && state.currentWorkOrder?.mode === 'text' && !WORKER_FUSION_TOOLS.has(exec.name)) return 'Text delegation has no external tools; prepare the result from the supplied material'
-    if (role === 'worker' && state.currentWorkOrder?.mode === 'explore'
+    // A parallel explore worker is bound to its own read-only order, not the
+    // primary one — resolve the caller's order before applying mode gates.
+    const workerOrder = role === 'worker' && state.parallelChild === SessionId(exec.agent.id) ? state.parallelOrder : state.currentWorkOrder
+    if (role === 'worker' && workerOrder?.mode === 'text' && !WORKER_FUSION_TOOLS.has(exec.name)) return 'Text delegation has no external tools; prepare the result from the supplied material'
+    if (role === 'worker' && workerOrder?.mode === 'explore'
       && !isRead(exec) && exec.name !== 'fusion_submit_result') {
       return 'Exploration is read-only: use file search/read tools and fusion_submit_result with 1–12 source ranges (omit them only when the directory has no entries on disk and you state that the scope is empty); no shell, edits or run_code'
     }
@@ -1281,11 +1290,17 @@ export class FusionCoordinator {
       && priorState.control.mode === 'running' && !priorState.control.recovering && !priorState.control.outcomeUnknown
       && priorState.lease?.holder === SessionId(agent.id) && held?.holder === SessionId(agent.id)
       && held.generation === priorState.lease.generation && this.leases.stillHeld(held)
-    if (priorState.lease && !directHandoff || held && !priorState.lease || this.effects.pending(binding.taskId).length) {
+    const parallelGateBypass = mode === 'explore' && priorState.currentWorkOrder !== undefined && priorState.currentWorkOrder.mode !== 'explore'
+    if (!parallelGateBypass && (priorState.lease && !directHandoff || held && !priorState.lease || this.effects.pending(binding.taskId).length)) {
       throw new Error('Settle the current writer and effects before a new work order: wait for or stop your running commands (job_output, job_kill) and let pending tools finish, then delegate again')
     }
     const promoting = mode === 'implement' && priorState.currentWorkOrder?.mode === 'explore'
-    if (priorState.currentWorkOrder && !promoting) throw new Error('A Worker already owns this task; use fusion_rework with model-authored feedback (after a report it can also add allowedPaths with addAllowedPaths, or correct checks)')
+    // Bounded parallelism: one read-only exploration may run alongside a
+    // non-explore order on its own child. It needs no write lease, no effects
+    // and no allowedPaths, so it cannot conflict with the primary worker.
+    const parallelLane = mode === 'explore' && priorState.currentWorkOrder !== undefined
+      && priorState.currentWorkOrder.mode !== 'explore' && priorState.parallelOrder === undefined
+    if (priorState.currentWorkOrder && !promoting && !parallelLane) throw new Error('A Worker already owns this task; use fusion_rework with model-authored feedback (after a report it can also add allowedPaths with addAllowedPaths, or correct checks)')
     const base: WorkspaceSnapshot = mode === 'text'
       ? { schemaVersion: 1, root: `text:${binding.sessionId}`, entries: [], excludedDirectoryNames: [], id: SnapshotId(`text:${binding.taskId}`) }
       : snapshotWorkspace(agent.session.header.cwd!)
@@ -1333,10 +1348,10 @@ export class FusionCoordinator {
     order.acceptance = checks.map(check => ({ id: check.definition.id, description: check.definition.description,
       mandatory: true, verificationKind: check.plan.kind, planId: check.plan.id, planDigest: digestOf(check.plan) }))
     this.#assertWorkerCapacity(binding.taskId, order.policy.maxWorkerSteps)
-    const childId = SessionId(binding.workerId ?? `fusion-worker-${randomUUID()}`)
+    const childId = SessionId(parallelLane ? `fusion-parallel-${randomUUID()}` : (binding.workerId ?? `fusion-worker-${randomUUID()}`))
     const priorChild = this.store.readDocument(`child:${childId}`)
     const resident = this.ctx.agents.get(NativeSessionId(childId))
-    if (binding.workerId) {
+    if (binding.workerId && !parallelLane) {
       const prior = priorChild?.value as { parent?: string; taskId?: TaskId } | undefined
       if (!prior || prior.parent !== agent.id || !prior.taskId) throw new Error('Persistent Worker ownership requires reconciliation')
       const previous = this.state(prior.taskId)
@@ -1348,7 +1363,7 @@ export class FusionCoordinator {
         throw new Error('Previous Worker task must be complete and quiescent under the same frozen profile and workspace')
       }
     } else if (priorChild || resident) throw new Error('New Worker identity is already in use')
-    const changeBase = mode === 'implement' ? captureChangeBase(this.store, binding.taskId, base, order.allowedPaths) : undefined
+    const changeBase = mode === 'implement' && !parallelLane ? captureChangeBase(this.store, binding.taskId, base, order.allowedPaths) : undefined
     // A direct preparation step may become delegated work without completing
     // the user task. Preserve its lease on every preflight error, and release
     // only the verified Lead writer before acquiring the Worker's generation.
@@ -1360,8 +1375,10 @@ export class FusionCoordinator {
       }
       this.#release(binding.taskId)
     }
-    this.append(binding.taskId, 'intent/chosen', { intent: 'DELEGATE' })
-    this.#saveRuntime({ schemaVersion: 1, taskId: binding.taskId, root: base.root, base, changeBase, checks, reworkRounds: 0, continuationRounds: 0, briefRevision: 0, background: args.block === false })
+    if (!parallelLane) {
+      this.append(binding.taskId, 'intent/chosen', { intent: 'DELEGATE' })
+      this.#saveRuntime({ schemaVersion: 1, taskId: binding.taskId, root: base.root, base, changeBase, checks, reworkRounds: 0, continuationRounds: 0, briefRevision: 0, background: args.block === false })
+    }
     const shownOrder = binding.profile.interactionMode === 'model-like' ? { ...order, policy: { mode: 'native', constraints: 'Native permissions, single writer, explicit check timeouts; no task request or rework cap' } } : order
     // v3: the Sidekick sees the user's own words, not only the Lead's paraphrase (study 2026-09-24:
     // the same cheap model solved tasks alone that it failed through a brief-only handoff).
@@ -1378,21 +1395,23 @@ export class FusionCoordinator {
     const prepared = this.state(binding.taskId)
     this.store.transact(binding.taskId, prepared.seq, persisted => ({
       events: [{ schemaVersion: 1, id: randomUUID(), taskId: binding.taskId, seq: prepared.seq + 1, revision: prepared.revision,
-        type: 'work-order/prepared', createdAt: new Date().toISOString(), causeId: exec.callId, payload: { order, reservedChild: childId } }],
+        type: 'work-order/prepared', createdAt: new Date().toISOString(), causeId: exec.callId, payload: { order, reservedChild: childId, ...(parallelLane ? { parallel: true as const } : {}) } }],
       outbox: [...persisted.outbox, { taskId: binding.taskId, operationId: order.operationId, kind: 'native-worker', state: 'prepared', reservedChild: childId, payloadRef: payload.id }],
     }))
     // Reuse native history, while the new work order owns checks and permissions.
     // Persist the rebinding before dispatch so an interrupted handoff is gated.
     if (resident) this.scopes.detach(resident)
     this.store.writeDocument(`child:${childId}`, priorChild?.revision ?? 0, { parent: agent.id, taskId: binding.taskId })
-    this.bindings.assignWorker(agent.id, binding.taskId, childId)
+    if (!parallelLane) this.bindings.assignWorker(agent.id, binding.taskId, childId)
     if (resident) this.#attachKnown(resident)
-    if (mode === 'implement') this.#acquire(binding, base.root, childId, order.operationId)
+    if (mode === 'implement' && !parallelLane) this.#acquire(binding, base.root, childId, order.operationId)
     let started = false
     try {
       this.store.advanceOutbox(binding.taskId, order.operationId, 'prepared', 'dispatched')
       this.activity.link(agent.session, childId, binding.taskId, exec.callId)
-      const accepted = binding.workerId
+      // A parallel-lane child is always a fresh session — never continue the
+      // persistent Worker, which is busy with the primary order.
+      const accepted = binding.workerId && !parallelLane
         ? await this.transport.continue(agent, childId, brief, exec.signal)
         : await this.transport.start(agent, { childId, brief, label: args.goal.slice(0, 100),
           route: this.modelControl.route(binding, 'worker'), persona: binding.prompts.worker, allowedTools: this.options.workerTools }, exec.signal)
@@ -1934,7 +1953,11 @@ export class FusionCoordinator {
           if (this.effects.pending(binding.taskId).length) throw new Error('Collect or stop every native job and settle effects before submitting a report')
           if (args.summary.length > 16_000 || args.unresolved.length > 30) throw new Error('Worker report is too large')
           const submitted = { summary: args.summary, unresolved: args.unresolved, status: args.status }
-          const order = this.state(binding.taskId).currentWorkOrder!
+          const state = this.state(binding.taskId)
+          // A parallel explore child owns its own order, not the primary one.
+          const order = state.parallelChild === SessionId(agent.id) ? state.parallelOrder : state.currentWorkOrder
+          if (!order) throw new Error('No work order is bound to this Worker')
+          const parallel = state.parallelChild === SessionId(agent.id)
           // A whole-tree snapshot can throw on an unrelated FIFO or socket. That must not
           // drop a blocked or needs-decision report, and a completed report is decided
           // only by the files it cites.
@@ -1946,8 +1969,33 @@ export class FusionCoordinator {
           }
           const explorationSubmitted = order.mode === 'explore'
             ? captureExploration(this.store, order, runtime.base, current, submitted, args.sources ?? [], snapshotFailure) : undefined
-          this.#saveRuntime({ ...runtime, submitted, explorationSubmitted })
+          this.#saveRuntime(parallel
+            ? { ...runtime, parallelSubmitted: submitted, explorationSubmitted }
+            : { ...runtime, submitted, explorationSubmitted })
           if (role === 'lead') { this.#release(binding.taskId); return this.#validate(agent, binding, exec) }
+          if (parallel) {
+            // The parallel lane settles itself — the primary order's collect path
+            // only serves the primary work order. Same validations as the primary
+            // explore path, then the journal records it into parallelExploration.
+            const report = explorationSubmitted!
+            if (!report || report.workOrderId !== order.id || report.snapshot !== order.baseSnapshot) {
+              throw new Error('Exploration report is missing or is not bound to the frozen baseline')
+            }
+            if (report.status === 'completed') {
+              const cited = citedEvidenceChanged(runtime.root, runtime.base, report)
+              if (cited) throw new Error(`Cited exploration evidence changed: ${cited}. Frozen baseline ${order.baseSnapshot}. Submit blocked or needs-decision to record the drift.`)
+              if (!report.sources.length && !scopeDirectoryEmpty(runtime.root)) {
+                throw new Error('A completed exploration requires 1–12 source ranges')
+              }
+            }
+            this.store.transact(binding.taskId, state.seq, persisted => ({
+              events: [{ schemaVersion: 1, id: randomUUID(), taskId: binding.taskId, seq: state.seq + 1,
+                revision: state.revision, type: 'exploration/recorded', createdAt: new Date().toISOString(),
+                causeId: exec.callId, payload: { report } }],
+              outbox: persisted.outbox.map(row => row.operationId === order.operationId
+                ? { ...row, state: 'acknowledged', resultDigest: digestOf(report) } : row),
+            }))
+          }
           exec.concludeTurn()
           return 'Report persisted. The Lead will review after this Worker becomes quiescent.'
         } })))

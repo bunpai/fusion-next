@@ -397,7 +397,7 @@ export type FusionEvent =
   | EventEnvelope<'requirements/revised', { reason: string }>
   | EventEnvelope<'profile/frozen', { digest: Digest; profileId: string; version: string }>
   | EventEnvelope<'intent/chosen', { intent: ExecutionIntent }>
-  | EventEnvelope<'work-order/prepared', { order: WorkOrder; reservedChild: SessionId }>
+  | EventEnvelope<'work-order/prepared', { order: WorkOrder; reservedChild: SessionId; parallel?: true }>
   | EventEnvelope<'work-order/acceptance-amended', { workOrderId: WorkOrderId; acceptance: readonly AcceptanceCriterion[]; reason: string }>
   | EventEnvelope<'work-order/scope-expanded', { workOrderId: WorkOrderId; allowedPaths: readonly string[]; added: readonly string[]; reason: string }>
   | EventEnvelope<'child/accepted', { operationId: OperationId; child: SessionId; messageId: string }>

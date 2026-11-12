@@ -135,19 +135,35 @@ function applyPayload(state: TaskState | undefined, event: FusionEvent): TaskSta
       }
       return resetReviewForNewSubject({ ...next, currentWorkOrder: { ...order, allowedPaths: event.payload.allowedPaths } })
     }
-    case 'child/accepted':
+    case 'child/accepted': {
+      const accepted = need(state, event)
+      if (event.payload.operationId === accepted.parallelOrder?.operationId) {
+        return { ...accepted, parallelAccepted: true }
+      }
       return {
-        ...need(state, event),
+        ...accepted,
         exploration: state?.currentWorkOrder?.mode === 'explore' ? undefined : state?.exploration,
         acceptedChild: event.payload.child,
         acceptedMessageId: event.payload.messageId,
         phase: 'WORKER_RUNNING',
       }
-    case 'child/claimed':
-      return { ...need(state, event), phase: 'WORKER_RUNNING' }
+    }
+    case 'child/claimed': {
+      const claimed = need(state, event)
+      return claimed.parallelOrder?.operationId === event.payload.operationId ? claimed : { ...claimed, phase: 'WORKER_RUNNING' }
+    }
     case 'exploration/recorded': {
       const next = need(state, event), report = event.payload.report, order = next.currentWorkOrder
       assertControlAllowsExecution(next)
+      // Bounded parallel lane: a parallel explore worker's report lands while
+      // the primary order is still in-flight. Route it to the parallel slot
+      // and release the parallel child; the primary order is untouched.
+      if (report.workOrderId === next.parallelOrder?.id) {
+        if (next.parallelOrder!.revision !== report.revision || next.parallelOrder!.baseSnapshot !== report.snapshot) {
+          throw new FusionError(EVENT_CONFLICT, 'Parallel exploration report is not bound to its frozen order')
+        }
+        return { ...next, parallelExploration: report, parallelOrder: undefined, parallelChild: undefined, parallelAccepted: false }
+      }
       if (order?.mode !== 'explore' || order.id !== report.workOrderId || order.revision !== report.revision
         || next.revision !== report.revision || order.baseSnapshot !== report.snapshot || next.lease) {
         throw new FusionError(EVENT_CONFLICT, 'Exploration requires the current read-only work order and unchanged snapshot')
@@ -300,6 +316,11 @@ function applyWorkOrderPrepared(
 ): TaskState {
   const next = need(state, event)
   const incoming = event.payload.order
+  if (event.payload.parallel === true) {
+    if (incoming.mode !== 'explore') throw new FusionError(EVENT_CONFLICT, 'a parallel order must be read-only exploration')
+    if (next.parallelOrder) throw new FusionError(EVENT_CONFLICT, 'a parallel exploration is already running')
+    return { ...next, parallelOrder: incoming, parallelChild: event.payload.reservedChild, parallelAccepted: false }
+  }
   const current = next.currentWorkOrder
   if (current && current.taskId === incoming.taskId && current.id === incoming.id && current.revision === incoming.revision) {
     if (digestOf(current) !== digestOf(incoming)) {
