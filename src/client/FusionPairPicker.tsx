@@ -1,5 +1,5 @@
 import { tr, useLang } from './i18n.js'
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ModelDirectoryState } from '@deepseek-ai/dsh-client-ui-model-selection/client'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { PhysicalRoute } from '../contracts.js'
@@ -22,11 +22,12 @@ const styles = `
 .fusion-executor{display:flex;align-items:center;gap:6px;min-width:0}
 .fusion-executor .fusion-executor-mark{display:flex;align-items:center;gap:4px;color:var(--dsw-alias-label-secondary);flex:none}
 .fusion-executor .fusion-executor-label{display:var(--dsh-composer-model-text-display,inline);font-size:12px;white-space:nowrap}
-.fusion-executor select{appearance:none;-webkit-appearance:none;font:inherit;font-size:12px;height:28px;max-width:190px;min-width:0;padding:0 18px 0 6px;border-radius:6px;cursor:pointer;
+.fusion-executor select{appearance:none;-webkit-appearance:none;font:inherit;font-size:13px;height:28px;width:auto;min-width:0;padding:0 18px 0 4px;border-radius:8px;cursor:pointer;
   border:0;background-color:transparent;color:var(--dsw-alias-label-primary);color-scheme:inherit;
   text-overflow:ellipsis;white-space:nowrap;overflow:hidden;
-  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 16 16'><path d='M4 6l4 4 4-4' fill='none' stroke='%23888' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/></svg>");
-  background-repeat:no-repeat;background-position:right 5px center}
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 16 16'><path d='M4.5 6.5l3.5 3.5 3.5-3.5' fill='none' stroke='%23999' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  background-repeat:no-repeat;background-position:right 4px center}
+.fusion-executor .fusion-executor-sizer{visibility:hidden;position:absolute;height:0;overflow:hidden;white-space:nowrap;font-size:13px;pointer-events:none}
 .fusion-executor select:hover{background-color:var(--dsw-alias-bg-layer-1)}
 .fusion-executor select[data-active=true]{color:var(--dsw-alias-brand-primary)}
 .fusion-executor select:disabled{cursor:default;opacity:.6}
@@ -75,6 +76,23 @@ export function FusionPairPicker({ sessionId, directory, load }: FusionPairPicke
   }
   const groups = view?.catalog?.groups ?? []
   const current = view?.worker ? keyOf(view.worker) : ''
+  const offLabel = tr(lang, '关闭', 'Off')
+  let selectedLabel = offLabel
+  if (current) {
+    for (const group of groups) {
+      const found = group.models.find(model => `${group.id}/${model.id}` === current)
+      if (found) { selectedLabel = found.name; break }
+    }
+    if (selectedLabel === offLabel) selectedLabel = current
+  }
+  const sizerRef = useRef<HTMLSpanElement>(null)
+  const [selectWidth, setSelectWidth] = useState<number | undefined>(undefined)
+  useLayoutEffect(() => {
+    const sizer = sizerRef.current
+    if (!sizer) return
+    const measured = Math.ceil(sizer.getBoundingClientRect().width) + 26
+    setSelectWidth(Math.min(Math.max(measured, 44), 240))
+  }, [selectedLabel])
   return <div className="fusion-executor" data-ud-check="fusion-executor">
     <style>{styles}</style>
     <span className="fusion-executor-mark" title={tr(lang, 'Fusion Next 执行模型', 'Fusion Next executor')}>
@@ -87,12 +105,14 @@ export function FusionPairPicker({ sessionId, directory, load }: FusionPairPicke
     </span>
     <select aria-label={tr(lang, '执行模型；选一个即开启 Fusion Next', 'Executor model; picking one enables Fusion Next')}
       value={current} disabled={busy} data-active={Boolean(view?.worker)}
+      style={selectWidth ? { width: selectWidth } : undefined}
       onChange={event => choose(event.target.value)}>
-      <option value="">{tr(lang, '关闭', 'Off')}</option>
+      <option value="">{offLabel}</option>
       {groups.map(group => <optgroup key={group.id} label={group.name}>
         {group.models.map(model => <option key={model.id} value={`${group.id}/${model.id}`}>{model.name}</option>)}
       </optgroup>)}
     </select>
+    <span ref={sizerRef} className="fusion-executor-sizer" aria-hidden="true">{selectedLabel}</span>
     {error && <span role="status" title={error}>⚠</span>}
   </div>
 }
