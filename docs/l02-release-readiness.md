@@ -61,6 +61,15 @@
 - 结果：`compat-tests/session-routing.spec.ts` **10/10 通过**（1.15s）——会话路由兼容语义（模型选择投影 + saviour Controller/CompactionRouteRegistry 对接）在真实插件源码 + 固定 Host 检出下验证通过。
 - 收据：`benchmark/baselines/logs/compat-run-20261111.log`（commit `4860c6d`）。
 
+### 1.5 缺口项收口（2026-11-12，6 项）
+
+1. **Worker 证据可发现性**（`6de666e`）：`fusion_list_evidence` 工具 + settlement notice 指引强化（Worker 不再复述归档原文，Lead 可枚举全部 task artifacts）。
+2. **V2Shadow 旧轨 → v2 日志镜像**（`54c147e`）：legacy task 事件投影为 v2 journal 事件（generation/assignment/brief/arbitration）。
+3. **S19 跨分支文件写拒绝**（`e7c730e`）：写工具经 `fileConflicts` 门禁对照 v2 journal 的 ASSIGNMENT_FILES_CLAIMED。
+4. **工单 → v2 效果台账**（`19ba593`）：work-order/prepared → EFFECT_INTENT，claimed → DISPATCHED，submitted → RECEIPT，outcome-unknown → UNRESOLVED（恢复可见性）。
+5. **Token 结构开销**：如实记录——fusion-role prompt + ~12 tool defs 为结构性开销，`assembleContextFor` 无 purpose 字段无法在接缝处按用途裁剪；量测显示 fusion 输入 token 低于 direct（1485 vs 1831 均值，缓存吸收）。不消除，作已知残差。
+6. **有界并行 explore 通道**（`bf3cd73`）：主工单在飞时允许第二个 `fusion-parallel-*` 只读 explore 子会话（own order/accepted/exploration 槽位 + 独立提交槽，主工单不互撞）。
+
 ## 3. 发布判定
 
 **不能**依据计划 §18 宣告 "Full Implementation Complete"：代码与本地测试齐备（§13 A01–L02 全部史诗均有实现与测试），单版本（0.2.2-rc.1）Host 内已实测关键链路。剩余未验证：§15 双版本 Host 验收（用户决定放弃该兼容项，仅当前版本验证）、§15 隐藏任务集规模基准。对外交付措辞：**实现完成、单版本 Host 验证通过、规模化基准待续**。Token 计量重复已由投影数据证伪（2026-11-12）。
