@@ -22,10 +22,13 @@ const styles = `
 .fusion-executor{display:flex;align-items:center;gap:6px;min-width:0}
 .fusion-executor .fusion-executor-mark{display:flex;align-items:center;gap:4px;color:var(--dsw-alias-label-secondary);flex:none}
 .fusion-executor .fusion-executor-label{display:var(--dsh-composer-model-text-display,inline);font-size:12px;white-space:nowrap}
-.fusion-executor select{font:inherit;font-size:12px;height:28px;max-width:190px;min-width:0;padding:0 6px;border-radius:6px;cursor:pointer;
-  border:1px solid var(--dsw-alias-border-l2);background-color:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);color-scheme:inherit;
-  text-overflow:ellipsis;white-space:nowrap;overflow:hidden}
-.fusion-executor select[data-active=true]{border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-brand-primary)}
+.fusion-executor select{appearance:none;-webkit-appearance:none;font:inherit;font-size:12px;height:28px;max-width:190px;min-width:0;padding:0 18px 0 6px;border-radius:6px;cursor:pointer;
+  border:0;background-color:transparent;color:var(--dsw-alias-label-primary);color-scheme:inherit;
+  text-overflow:ellipsis;white-space:nowrap;overflow:hidden;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 16 16'><path d='M4 6l4 4 4-4' fill='none' stroke='%23888' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  background-repeat:no-repeat;background-position:right 5px center}
+.fusion-executor select:hover{background-color:var(--dsw-alias-bg-layer-1)}
+.fusion-executor select[data-active=true]{color:var(--dsw-alias-brand-primary)}
 .fusion-executor select:disabled{cursor:default;opacity:.6}
 .fusion-executor select:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}
 .fusion-executor [role=status]{font-size:12px;color:var(--dsw-alias-state-error-primary);white-space:nowrap}
