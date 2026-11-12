@@ -33,4 +33,4 @@
 - 任务集为 5 个微任务 ×3 seeds，非 §15 的“隐藏验证任务集”；规模不足以支撑 −30% 成本/99% 恢复率结论，仅证明机制端到端成立。
 - fusion-fixed 仅 1 seed（失败模式确定性，多 seed 无信息量）。
 - direct/fusion-next 使用同一物理 Lead 模型，路由差异未体现（白名单模型有限）。
-- token 计量重复问题仍在：Fusion 调用与其委派的物理调用都被计数（in-tokens 已按物理口径如实呈现）。
+- token 计量无重复（2026-11-12 证据修正此前推测）：session 投影 `tokenUsage` totals 精确等于每 turn 单条 usage 之和（uncachedInput 13508 / output 220 / cacheRead 162176）— 委派的物理调用不产生第二条计量记录。

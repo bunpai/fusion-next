@@ -42,9 +42,9 @@
 |---|---|
 | Mid-run 切换中的 NativeContextGuard 暂停 → 该轮 turn blocked | 观察到一次（物理→Fusion 切换时 turn/end blocked），来源是原生 context guard 而非 Fusion 代码；S04 语义仍正确（随后 turn 恢复） |
 | 双 Host 版本验收 | 0.2.0-rc.2 Host 检出不可用；当前仅验证 0.2.2-rc.1 单版本 |
-| Fork/分支 GUI 流（S08–S13） | 未在 GUI 执行；单元层 SESSION_FORKED 语义已由 C03 测试覆盖 |
-| 发布级三臂基准 | 需要预算受控的真实 Provider e2e；当前仅机制 smoke（MECH-SMOKE 正确）+ 聚合器 |
-| token 计量重复 | Fusion 虚拟提供者调用 + 委托物理调用均被 tokenMeter 计数（待专用 Fusion LLM 层） |
+| ~~token 计量重复~~ 已排除 | 投影 `tokenUsage` totals = 各 turn 单条 usage 之和（13508/220/162176 精确匹配）— 委托物理调用不产生第二条计量记录，无重复 |
+| Fork/分支（S08–S13） | **部分验证**：S09 Fusion fork 独立 Run（子 session-472d9309 → 独立 run RUN_CREATED+RUN_ACTIVATED rev2）+ S12 双分支并发（父 run 保持 ACTIVE）+ 子会话真实 turn（回复"分支"）已实证；缺口：SESSION_FORKED/血缘未桥接进 v2 journal（fork seam 未接 Host fork 事件，C03 仅单元层覆盖）、S13 失败隔离、S14 分支切换、S19 写冲突、S20 事件隔离未测 |
+| ~~发布级三臂基准~~ | 已执行（有界微任务集）：direct 15/15、fusion-next 15/15、fusion-fixed 0/5 — 见 `docs/benchmark-run.md`；未达 §15 隐藏任务集规模 |
 
 ## 结论
 
