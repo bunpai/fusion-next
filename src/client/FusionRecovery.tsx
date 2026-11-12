@@ -36,7 +36,7 @@ export function FusionRecovery({ sessionId, task }: { sessionId: string; task: N
       setCatalog({ ...value, groups: value.groups.filter(group => group.id !== 'fusion-next') })
     } catch (error) { setError(String(error)) }
   }
-  return <section className="fusion-recovery" aria-label={tr(lang, 'Fusion 恢复操作', 'Fusion recovery')}>
+  return <section className="fusion-recovery" aria-label={tr(lang, 'Fusion Next 恢复操作', 'Fusion Next recovery')}>
     <h3>{tr(lang, '继续当前任务', 'Continue this task')}</h3>
     {Object.entries(control.waits).filter(([, wait]) => wait?.taskId === task.id).map(([key, wait]) => <p key={key}>
       {key === 'lead' ? 'Lead' : 'Sidekick'} · {wait!.code} · {wait!.code === 'NO_PROGRESS' ? tr(lang, '重复操作没有进展，请调整做法', 'Repeated steps made no progress; change the approach') : wait!.code === 'WORKFLOW_INCOMPLETE' ? tr(lang, '报告、委派或审查尚未完成，请检查任务后继续', 'A report, handoff or review is unfinished; check the task, then continue') : wait!.code.includes('QUOTA') ? tr(lang, '额度重置时间未知', 'Quota reset time unknown') : tr(lang, '需要处理模型错误', 'A model error needs attention')}

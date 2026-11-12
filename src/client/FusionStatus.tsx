@@ -54,11 +54,11 @@ export function FusionStatus({ sessionId, attentionOnly = false }: { sessionId: 
   }
   return <details className="fusion-status" key={task.id} onToggle={event => setExpandedTask(event.currentTarget.open ? task.id : undefined)}>
     <style>{styles}</style>
-    <summary aria-label={tr(lang, `Fusion · ${stage}，任务详情`, `Fusion · ${stage}, task details`)} data-ud-check="fusion-status-summary">
-      <span className="fusion-status-label" role="status">Fusion · {stage}</span>
+    <summary aria-label={tr(lang, `Fusion Next · ${stage}，任务详情`, `Fusion Next · ${stage}, task details`)} data-ud-check="fusion-status-summary">
+      <span className="fusion-status-label" role="status">Fusion Next · {stage}</span>
       <span className="fusion-status-count">{tr(lang, `${usage.calls} 次请求`, `${usage.calls} requests`)}</span><span>{tr(lang, '详情', 'Details')}</span>
     </summary>
-    <div className="fusion-status-detail" tabIndex={0} aria-label={tr(lang, 'Fusion 任务详情', 'Fusion task details')} data-ud-check="fusion-status-detail">
+    <div className="fusion-status-detail" tabIndex={0} aria-label={tr(lang, 'Fusion Next 任务详情', 'Fusion Next task details')} data-ud-check="fusion-status-detail">
       <p>{detail ?? (task.stage === '完成' ? tr(lang, `本轮任务已结束 · ${verification}`, `This task has finished · ${verification}`) : tr(lang, `本轮任务 · ${verification}`, `This task · ${verification}`))}</p>
       {task.modelControl && task.stage !== '完成' && <FusionRecovery sessionId={sessionId} task={task} />}
       <dl>

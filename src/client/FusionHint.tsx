@@ -21,9 +21,9 @@ export function FusionHint({ sessionId, directory, load }: FusionHintProps) {
     const refresh = () => {
       void fetch('/api/fusion-next?view=settings', { credentials: 'same-origin', cache: 'no-store', signal: abort.signal })
         .then(async response => { if (!response.ok) throw new Error('unavailable'); return response.json() as Promise<{ pair: unknown; authorized: boolean }> })
-        .then(state => { if (active) setMessage(!state.pair ? tr(lang, 'Fusion 尚未配置模型，请前往设置 → Fusion 选择 Lead 和 Sidekick。', 'Fusion has no models yet: open Settings → Fusion and choose a Lead and a Sidekick.')
-          : !state.authorized ? tr(lang, 'Fusion 当前配置未就绪，请前往设置 → Fusion 查看。', 'The Fusion setup is not ready: see Settings → Fusion.') : undefined) })
-        .catch(() => { if (active) setMessage(tr(lang, '暂时无法确认 Fusion 配置，请前往设置 → Fusion 查看。', 'Cannot confirm the Fusion setup right now: see Settings → Fusion.')) })
+        .then(state => { if (active) setMessage(!state.pair ? tr(lang, 'Fusion 尚未配置模型，请前往设置 → Fusion 选择 Lead 和 Sidekick。', 'Fusion has no models yet: open Settings → Fusion Next and choose a Lead and a Sidekick.')
+          : !state.authorized ? tr(lang, 'Fusion 当前配置未就绪，请前往设置 → Fusion 查看。', 'The Fusion setup is not ready: see Settings → Fusion Next.') : undefined) })
+        .catch(() => { if (active) setMessage(tr(lang, '暂时无法确认 Fusion 配置，请前往设置 → Fusion 查看。', 'Cannot confirm the Fusion setup right now: see Settings → Fusion Next.')) })
     }
     refresh()
     const off = onSettingsChanged(refresh)

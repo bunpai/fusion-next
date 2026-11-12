@@ -156,7 +156,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   const configuredProfile = async (): Promise<ResolvedProfile> => {
     defaultProfile = undefined
     const saved = store.readDocument('settings:profile')
-    if (!saved && (!config.profilePath || !isAbsolute(config.profilePath))) throw new Error(bi('请先在设置的 Fusion 页面选择 Lead 和 Worker', 'Open Settings → Fusion and choose a Lead and a Sidekick first'))
+    if (!saved && (!config.profilePath || !isAbsolute(config.profilePath))) throw new Error(bi('请先在设置的 Fusion 页面选择 Lead 和 Worker', 'Open Settings → Fusion Next and choose a Lead and a Sidekick first'))
     const raw = saved?.value as Record<string, unknown> | undefined ?? loadJsonObject(config.profilePath!)
     const catalog = await physicalCatalog()
     const pair = validatePairChoice(raw, catalog)

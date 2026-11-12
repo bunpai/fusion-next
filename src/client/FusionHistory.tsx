@@ -28,7 +28,7 @@ export function FusionHistory() {
       .finally(() => { if (!abort.signal.aborted) setLoading(false) })
     return () => abort.abort()
   }, [cursor, refresh, lang])
-  return <section className="fusion-history" aria-label={tr(lang, 'Fusion 历史与统计', 'Fusion history and statistics')} data-ud-check="fusion-history">
+  return <section className="fusion-history" aria-label={tr(lang, 'Fusion Next 历史与统计', 'Fusion Next history and statistics')} data-ud-check="fusion-history">
     <h2>{tr(lang, '历史与统计', 'History and statistics')}</h2>
     <p>{tr(lang, '按实际模型请求汇总，包含任务、压缩、保活及已有标题请求。未报告的用量不算作 0；金额与节省率尚无可靠数据。',
       'Totals of actual model requests: tasks, compaction, keepalive and title requests. Unreported usage is not counted as 0; no reliable billed amount or saving rate is available.')}</p>
