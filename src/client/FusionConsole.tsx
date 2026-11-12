@@ -14,23 +14,28 @@ const routeLabel = (route: PhysicalRoute | null | undefined) =>
   route ? `${route.model}` : undefined
 
 const styles = `
-.fusion-console{padding:16px 20px;max-width:860px;color:var(--dsw-alias-label-primary);font-size:13px;line-height:1.6}
-.fusion-console h2{font-size:15px;margin:0 0 12px;font-weight:600}
-.fusion-console .fusion-pair{display:flex;flex-wrap:wrap;gap:8px 20px;padding:10px 12px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-1)}
+.fusion-console{padding:20px 24px;max-width:860px;color:var(--dsw-alias-label-primary);font-size:13px;line-height:1.6}
+.fusion-console h2{font-size:16px;margin:0 0 14px;font-weight:600;letter-spacing:-0.01em}
+.fusion-console .fusion-pair{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:0;padding:4px 0;border:1px solid var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-alias-bg-layer-1)}
+.fusion-console .fusion-pair>div{padding:10px 16px}
+.fusion-console .fusion-pair>div+div{border-left:1px solid var(--dsw-alias-border-l2)}
 .fusion-console .fusion-pair b{font-weight:600}
-.fusion-console .fusion-pair small{display:block;color:var(--dsw-alias-label-secondary);font-size:12px}
-.fusion-console .fusion-console-note{margin:16px 0;color:var(--dsw-alias-label-secondary)}
-.fusion-console .fusion-tabs{display:flex;gap:4px;margin:16px 0 12px;border-bottom:1px solid var(--dsw-alias-border-l2)}
-.fusion-console .fusion-tabs button{font:inherit;font-size:13px;color:var(--dsw-alias-label-secondary);background:none;border:0;border-bottom:2px solid transparent;padding:6px 10px;cursor:pointer}
+.fusion-console .fusion-pair small{display:block;color:var(--dsw-alias-label-secondary);font-size:12px;margin-top:2px}
+.fusion-console .fusion-console-note{margin:14px 0;color:var(--dsw-alias-label-secondary)}
+.fusion-console .fusion-tabs{display:flex;gap:2px;margin:18px 0 14px;border-bottom:1px solid var(--dsw-alias-border-l2)}
+.fusion-console .fusion-tabs button{font:inherit;font-size:13px;color:var(--dsw-alias-label-secondary);background:none;border:0;border-bottom:2px solid transparent;padding:7px 12px;cursor:pointer;transition:color .12s}
+.fusion-console .fusion-tabs button:hover{color:var(--dsw-alias-label-primary)}
 .fusion-console .fusion-tabs button[aria-selected=true]{color:var(--dsw-alias-label-primary);border-bottom-color:var(--dsw-alias-brand-primary);font-weight:600}
-.fusion-console .fusion-recovery fieldset{border:0;padding:0;display:flex;flex-direction:column;gap:10px}.fusion-console .fusion-recovery :is(button,select,input){font:inherit;color:var(--dsw-alias-label-primary);border:1px solid var(--dsw-alias-border-l2);border-radius:6px;padding:7px;max-width:100%}.fusion-console .fusion-recovery :is(select,input,option,optgroup){background-color:var(--dsw-alias-bg-layer-1);color-scheme:inherit}.fusion-console .fusion-recovery button{cursor:pointer;background-color:var(--dsw-alias-button-elevated-fill)}.fusion-console .fusion-recovery [role=alert]{color:var(--dsw-alias-state-error-primary)}
-.fusion-console p{margin:4px 0 12px}.fusion-console h3{font-size:13px;margin:16px 0 4px;font-weight:600}
-.fusion-console dl{margin:0;display:grid;grid-template-columns:minmax(72px,auto) minmax(0,1fr);gap:4px 12px}
+.fusion-console .fusion-recovery fieldset{border:0;padding:0;display:flex;flex-direction:column;gap:10px}.fusion-console .fusion-recovery :is(button,select,input){font:inherit;color:var(--dsw-alias-label-primary);border:1px solid var(--dsw-alias-border-l2);border-radius:8px;padding:7px 10px;max-width:100%}.fusion-console .fusion-recovery :is(select,input,option,optgroup){background-color:var(--dsw-alias-bg-layer-1);color-scheme:inherit}.fusion-console .fusion-recovery button{cursor:pointer;background-color:var(--dsw-alias-button-elevated-fill)}.fusion-console .fusion-recovery [role=alert]{color:var(--dsw-alias-state-error-primary)}
+.fusion-console p{margin:4px 0 12px}.fusion-console h3{font-size:13px;margin:18px 0 6px;font-weight:600}
+.fusion-console dl{margin:0;display:grid;grid-template-columns:minmax(72px,auto) minmax(0,1fr);gap:6px 14px}
 .fusion-console dt{color:var(--dsw-alias-label-secondary)}.fusion-console dd{margin:0;min-width:0}
-.fusion-console ul{list-style:none;margin:0;padding:0}.fusion-console li{padding:6px 0;border-bottom:1px solid var(--dsw-alias-border-l2)}
-.fusion-console small{display:block;color:var(--dsw-alias-label-secondary);font-size:12px}
-.fusion-console .fusion-stage{font-size:14px;font-weight:600;margin:0 0 4px}
-.fusion-console .fusion-stage[data-attention=true]{color:var(--dsw-alias-state-error-primary)}
+.fusion-console ul{list-style:none;margin:0;padding:0}.fusion-console li{padding:8px 0;border-bottom:1px solid var(--dsw-alias-border-l2)}
+.fusion-console small{display:block;color:var(--dsw-alias-label-secondary);font-size:12px;margin-top:2px}
+.fusion-console .fusion-stage{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:600;margin:0 0 6px;padding:4px 12px;border-radius:999px;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l2)}
+.fusion-console .fusion-stage::before{content:'';width:7px;height:7px;border-radius:50%;background:var(--dsw-alias-brand-primary)}
+.fusion-console .fusion-stage[data-attention=true]{color:var(--dsw-alias-state-error-primary);border-color:var(--dsw-alias-state-error-primary)}
+.fusion-console .fusion-stage[data-attention=true]::before{background:var(--dsw-alias-state-error-primary)}
 `
 
 type Tab = 'task' | 'activity'
@@ -75,8 +80,8 @@ export function FusionConsole({ sessionId }: { sessionId?: string }) {
       <div><b>{tr(lang, '状态', 'State')}</b><small>{pair.selected ? stage ?? tr(lang, '进行中', 'active') : tr(lang, '已配置，发送消息后开始', 'paired; starts on the next message')}</small></div>
     </div> : <p className="fusion-console-note">{pairFailed
       ? tr(lang, '暂时无法读取 Fusion 状态，稍后自动重试。', 'Fusion status is unavailable right now; it retries automatically.')
-      : tr(lang, '本会话未启用 Fusion Next：在输入框上方的「执行」选择器挑一个执行模型即可开启双模型协作。',
-          'Fusion Next is off in this session: pick an executor in the picker above the composer to start two-model collaboration.')}</p>}
+      : tr(lang, '本会话未启用 Fusion Next：在输入框旁的「执行」选择器挑一个执行模型即可开启双模型协作。',
+          'Fusion Next is off in this session: pick an executor beside the model selector to start two-model collaboration.')}</p>}
     {task && <>
       <div className="fusion-tabs" role="tablist">
         <button role="tab" aria-selected={tab === 'task'} onClick={() => setTab('task')}>{tr(lang, '当前任务', 'Current task')}</button>

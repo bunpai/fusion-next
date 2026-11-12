@@ -23,15 +23,19 @@ interface RunningSession {
 }
 
 const styles = `
-.fusion-panel{padding:20px 24px;max-width:920px;overflow:auto;height:100%;box-sizing:border-box;color:var(--dsw-alias-label-primary);font-size:13px;line-height:1.6}
-.fusion-panel h1{font-size:18px;margin:0 0 4px;font-weight:600}
-.fusion-panel>p{margin:0 0 16px;color:var(--dsw-alias-label-secondary)}
+.fusion-panel{padding:24px 28px;max-width:920px;overflow:auto;height:100%;box-sizing:border-box;color:var(--dsw-alias-label-primary);font-size:13px;line-height:1.6}
+.fusion-panel h1{font-size:20px;margin:0 0 6px;font-weight:600;letter-spacing:-0.01em}
+.fusion-panel>p{margin:0 0 20px;color:var(--dsw-alias-label-secondary);max-width:640px}
 .fusion-panel .fusion-history,.fusion-panel .fusion-cache{margin:0 0 28px}
-.fusion-panel table{border-collapse:collapse;width:100%}
-.fusion-panel :is(th,td){text-align:left;padding:6px 10px 6px 0;border-bottom:1px solid var(--dsw-alias-border-l2);font-weight:400;vertical-align:top}
-.fusion-panel thead th{color:var(--dsw-alias-label-secondary);font-weight:600}
-.fusion-panel small{display:block;color:var(--dsw-alias-label-secondary);font-size:12px}
-.fusion-panel button{font:inherit;color:var(--dsw-alias-label-primary);border:1px solid var(--dsw-alias-border-l2);border-radius:6px;padding:6px 12px;background-color:var(--dsw-alias-button-elevated-fill);cursor:pointer}
+.fusion-panel table{border-collapse:collapse;width:100%;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;overflow:hidden}
+.fusion-panel :is(th,td){text-align:left;padding:10px 14px;border-bottom:1px solid var(--dsw-alias-border-l2);font-weight:400;vertical-align:top}
+.fusion-panel tbody tr:last-child td{border-bottom:0}
+.fusion-panel tbody tr{transition:background-color .12s}
+.fusion-panel tbody tr:hover{background-color:var(--dsw-alias-bg-layer-1)}
+.fusion-panel thead th{color:var(--dsw-alias-label-secondary);font-weight:600;font-size:12px;background-color:var(--dsw-alias-bg-layer-1);white-space:nowrap}
+.fusion-panel small{display:block;color:var(--dsw-alias-label-secondary);font-size:12px;margin-top:2px}
+.fusion-panel button{font:inherit;color:var(--dsw-alias-label-primary);border:1px solid var(--dsw-alias-border-l2);border-radius:8px;padding:6px 14px;background-color:var(--dsw-alias-button-elevated-fill);cursor:pointer;transition:background-color .12s,border-color .12s}
+.fusion-panel button:hover:not(:disabled){background-color:var(--dsw-alias-bg-layer-2,var(--dsw-alias-bg-layer-1))}
 .fusion-panel button:disabled{opacity:.5;cursor:default}
 .fusion-panel .fusion-actions{display:flex;gap:8px;margin:8px 0}
 .fusion-panel h2{font-size:14px;margin:0 0 8px;font-weight:600}
@@ -39,15 +43,18 @@ const styles = `
 .fusion-panel ol,.fusion-panel ul{margin:0;padding-left:20px}
 .fusion-panel li{margin:0 0 10px}
 .fusion-panel [role=alert]{color:var(--dsw-alias-state-error-primary)}
-.fusion-panel select,.fusion-panel input{font:inherit;color:var(--dsw-alias-label-primary);background-color:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l2);border-radius:6px;padding:4px 6px;color-scheme:inherit}
-.fusion-panel .fusion-running{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 16px}
-.fusion-panel .fusion-chip{display:flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-1);font-size:12px}
-.fusion-panel .fusion-chip b{font-weight:600}
-.fusion-panel .fusion-chip[data-attention=true]{border-color:var(--dsw-alias-state-error-primary)}
-.fusion-panel .fusion-chip .fusion-dot{width:8px;height:8px;border-radius:50%;background:var(--dsw-alias-state-success-primary,#3a5);flex:none}
-.fusion-panel .fusion-chip[data-stage=完成] .fusion-dot{background:var(--dsw-alias-label-secondary)}
-.fusion-panel .fusion-tabs{display:flex;gap:4px;margin:0 0 16px;border-bottom:1px solid var(--dsw-alias-border-l2)}
-.fusion-panel .fusion-tabs button{font:inherit;font-size:13px;color:var(--dsw-alias-label-secondary);background:none;border:0;border-bottom:2px solid transparent;padding:6px 12px;cursor:pointer;border-radius:0}
+.fusion-panel select,.fusion-panel input{font:inherit;color:var(--dsw-alias-label-primary);background-color:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l2);border-radius:8px;padding:4px 8px;color-scheme:inherit}
+.fusion-panel .fusion-empty{padding:48px 16px;text-align:center;color:var(--dsw-alias-label-secondary);border:1px dashed var(--dsw-alias-border-l2);border-radius:12px;font-size:13px}
+.fusion-panel .fusion-running{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 20px}
+.fusion-panel .fusion-chip{display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border:1px solid var(--dsw-alias-border-l2);border-radius:999px;background:var(--dsw-alias-bg-layer-1);font-size:12px;line-height:1.3}
+.fusion-panel .fusion-chip b{font-weight:600;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fusion-panel .fusion-chip[data-attention=true]{border-color:var(--dsw-alias-state-error-primary);color:var(--dsw-alias-state-error-primary)}
+.fusion-panel .fusion-chip .fusion-dot{width:7px;height:7px;border-radius:50%;background:var(--dsw-alias-brand-primary);flex:none}
+.fusion-panel .fusion-chip[data-stage=完成] .fusion-dot{background:var(--dsw-alias-state-success-primary,#3a5)}
+.fusion-panel .fusion-chip[data-stage=待命] .fusion-dot{background:var(--dsw-alias-label-secondary);opacity:.5}
+.fusion-panel .fusion-tabs{display:flex;gap:2px;margin:0 0 20px;border-bottom:1px solid var(--dsw-alias-border-l2)}
+.fusion-panel .fusion-tabs button{font:inherit;font-size:13px;color:var(--dsw-alias-label-secondary);background:none;border:0;border-bottom:2px solid transparent;padding:7px 14px;cursor:pointer;border-radius:0;transition:color .12s}
+.fusion-panel .fusion-tabs button:hover{color:var(--dsw-alias-label-primary)}
 .fusion-panel .fusion-tabs button[aria-selected=true]{color:var(--dsw-alias-label-primary);border-bottom-color:var(--dsw-alias-brand-primary);font-weight:600}
 `
 
@@ -114,9 +121,9 @@ export function FusionPanel() {
       <button role="tab" aria-selected={tab === 'cache'} onClick={() => setTab('cache')}>{tr(lang, '缓存保活', 'Cache keepalive')}</button>
     </div>
     {tab === 'running' && <>
-      {running.length === 0 && <p>{loaded
-        ? tr(lang, '当前没有运行中的 Fusion 任务。在某个会话输入框上方的「执行」选择器挑一个执行模型即可开始。',
-            'No fusion tasks are running. Pick an executor in the picker above a session\'s composer to start one.')
+      {running.length === 0 && <p className="fusion-empty">{loaded
+        ? tr(lang, '当前没有运行中的 Fusion 任务。在某个会话输入框旁的「执行」选择器挑一个执行模型即可开始。',
+            'No fusion tasks are running. Pick an executor beside a session\'s model selector to start one.')
         : tr(lang, '正在读取…', 'Loading…')}</p>}
       {running.length > 0 && <table>
         <thead><tr><th>{tr(lang, '会话', 'Session')}</th><th>{tr(lang, '规划', 'Planner')}</th><th>{tr(lang, '执行', 'Executor')}</th><th>{tr(lang, '当前任务', 'Current task')}</th><th>{tr(lang, '请求', 'Requests')}</th></tr></thead>

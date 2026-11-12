@@ -7,6 +7,11 @@ import { FusionStatus } from './FusionStatus.js'
 
 export interface FusionHintProps { sessionId: string; directory: ObservableSnapshot<ModelDirectoryState>; load(): void }
 
+/** Collapsed Fusion attention ledger above the composer; renders nothing while the task needs no attention. */
+export function FusionDockAttention({ sessionId }: FusionHintProps) {
+  return <FusionStatus sessionId={sessionId} attentionOnly />
+}
+
 /** Additive composer hint. The original selector and its selection state stay native. */
 export function FusionHint({ sessionId, directory, load }: FusionHintProps) {
   const selected = useSyncExternalStore(directory.subscribe, directory.getSnapshot).current

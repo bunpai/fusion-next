@@ -25,7 +25,7 @@ import { BindingRepository, type SessionBinding } from './host/bindings.js'
 import { FusionCoordinator } from './host/coordinator.js'
 import { authorizeConfiguredPair, NativeRequestBudget } from './host/native-budget.js'
 import { json, readJson, trustedRequest } from './host/http.js'
-import { readFusionStatus, readFusionStatusAsync } from './host/status.js'
+import { readFusionStatusAsync } from './host/status.js'
 import { readHistoricalFusionActivity } from './host/native-activity.js'
 import { nativeShellTool } from './host/shell.js'
 import { migrateFusionV2 } from './persistence/index.js'
@@ -326,17 +326,23 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
         }
         if (url.searchParams.get('view') === 'running') {
           // All sessions with a selected fusion binding, for the global panel.
-          const sessions = bindings.selected().map(binding => {
-            let title: string | null = null
-            try {
-              title = (ctx.agents.get(SessionId(binding.sessionId))?.session.snapshotEvents()
-                .findLast(event => event.type === 'session/title') as { title?: string } | undefined)?.title ?? null
-            } catch { title = null }
-            const status = readFusionStatus(store, binding.sessionId)
-            return { sessionId: binding.sessionId, title,
-              lead: binding.profile.lead, worker: binding.profile.worker, task: status.task ?? null }
-          })
-          return json(res, 200, { sessions })
+          const abort = new AbortController(), disconnected = () => abort.abort()
+          res.once('close', disconnected)
+          try {
+            const sessions = await Promise.all(bindings.selected().map(async binding => {
+              let title: string | null = null
+              try {
+                title = (ctx.agents.get(SessionId(binding.sessionId))?.session.snapshotEvents()
+                  .findLast(event => event.type === 'session/title') as { title?: string } | undefined)?.title ?? null
+              } catch { title = null }
+              const status = await readFusionStatusAsync(store, binding.sessionId, abort.signal)
+              return { sessionId: binding.sessionId, title,
+                lead: binding.profile.lead, worker: binding.profile.worker, task: status.task ?? null }
+            }))
+            if (!res.destroyed) return json(res, 200, { sessions })
+            return
+          } catch (error) { if (!abort.signal.aborted) throw error; return }
+          finally { res.off('close', disconnected) }
         }
         if (url.searchParams.get('view') === 'cache') {
           let profile: ResolvedProfile | undefined

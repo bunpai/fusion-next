@@ -3,7 +3,6 @@ import { useEffect, useState } from 'react'
 import type { ModelDirectoryState } from '@deepseek-ai/dsh-client-ui-model-selection/client'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { PhysicalRoute } from '../contracts.js'
-import { FusionStatus } from './FusionStatus.js'
 
 export interface FusionPairPickerProps {
   sessionId: string
@@ -19,6 +18,19 @@ interface PairView {
   catalog?: { groups: CatalogGroup[] }
 }
 
+const styles = `
+.fusion-executor{display:flex;align-items:center;gap:6px;min-width:0}
+.fusion-executor .fusion-executor-mark{display:flex;align-items:center;gap:4px;color:var(--dsw-alias-label-secondary);flex:none}
+.fusion-executor .fusion-executor-label{display:var(--dsh-composer-model-text-display,inline);font-size:12px;white-space:nowrap}
+.fusion-executor select{font:inherit;font-size:12px;height:28px;max-width:190px;min-width:0;padding:0 6px;border-radius:6px;cursor:pointer;
+  border:1px solid var(--dsw-alias-border-l2);background-color:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);color-scheme:inherit;
+  text-overflow:ellipsis;white-space:nowrap;overflow:hidden}
+.fusion-executor select[data-active=true]{border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-brand-primary)}
+.fusion-executor select:disabled{cursor:default;opacity:.6}
+.fusion-executor select:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}
+.fusion-executor [role=status]{font-size:12px;color:var(--dsw-alias-state-error-primary);white-space:nowrap}
+`
+
 const keyOf = (route: PhysicalRoute) => `${route.provider}/${route.model}`
 const routeOf = (key: string): PhysicalRoute | undefined => {
   const cut = key.indexOf('/')
@@ -26,9 +38,9 @@ const routeOf = (key: string): PhysicalRoute | undefined => {
 }
 
 /**
- * Composer executor picker: the session's normal model menu is the planner;
- * this second dropdown sets the executor for this session (bound like a normal
- * model). Closing the executor returns the session to a plain model session.
+ * Composer tool-row executor picker, next to the native model selector: the
+ * session's own model is the planner; picking an executor here turns Fusion
+ * Next on for this session, choosing Off returns it to a plain session.
  */
 export function FusionPairPicker({ sessionId, directory, load }: FusionPairPickerProps) {
   const lang = useLang()
@@ -46,9 +58,6 @@ export function FusionPairPicker({ sessionId, directory, load }: FusionPairPicke
   const choose = (value: string) => {
     if (busy) return
     setBusy(true); setError(undefined)
-    if (value) {
-      try { localStorage.setItem('fusion-next:last-executor', value) } catch { /* storage unavailable */ }
-    }
     void fetch('/api/fusion-next', {
       method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ action: 'session-pair', sessionId, worker: value ? routeOf(value) ?? null : null }),
@@ -63,35 +72,24 @@ export function FusionPairPicker({ sessionId, directory, load }: FusionPairPicke
   }
   const groups = view?.catalog?.groups ?? []
   const current = view?.worker ? keyOf(view.worker) : ''
-  const lastExecutor = () => {
-    try { return localStorage.getItem('fusion-next:last-executor') ?? '' } catch { return '' }
-  }
-  const firstModel = () => {
-    const group = groups[0], model = group?.models[0]
-    return group && model ? `${group.id}/${model.id}` : ''
-  }
-  const toggle = () => choose(view?.worker ? '' : (lastExecutor() || firstModel()))
-  return <div style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '4px 12px 0', fontSize: 12, color: 'var(--dsw-alias-label-secondary)' }}>
-    <button type="button" onClick={toggle} disabled={busy} role="switch" aria-checked={Boolean(view?.worker)}
-      aria-label={tr(lang, '开关本会话 Fusion Next', 'Toggle Fusion Next for this session')}
-      style={{ flexShrink: 0, fontSize: 12, padding: '2px 8px', minHeight: 26, borderRadius: 6, cursor: 'pointer',
-        border: '1px solid var(--dsw-alias-border-l2)', backgroundColor: 'var(--dsw-alias-bg-layer-1)',
-        color: 'var(--dsw-alias-label-primary)' }}>
-      {view?.worker ? tr(lang, 'Fusion ●', 'Fusion ●') : tr(lang, 'Fusion ○', 'Fusion ○')}
-    </button>
-    <span style={{ flexShrink: 0 }}>{tr(lang, '执行', 'Executor')}</span>
-    <select aria-label={tr(lang, '执行模型', 'Executor model')} value={current} disabled={busy}
-      onChange={event => choose(event.target.value)}
-      style={{ minHeight: 26, fontSize: 12, maxWidth: 240,
-        backgroundColor: 'var(--dsw-alias-bg-layer-1)', color: 'var(--dsw-alias-label-primary)',
-        border: '1px solid var(--dsw-alias-border-l2)', borderRadius: 6, padding: '2px 6px' }}>
-      <option value="">{tr(lang, '关闭（普通会话）', 'Off (normal session)')}</option>
+  return <div className="fusion-executor" data-ud-check="fusion-executor">
+    <style>{styles}</style>
+    <span className="fusion-executor-mark" title={tr(lang, 'Fusion Next 执行模型', 'Fusion Next executor')}>
+      <svg width="13" height="13" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+        <circle cx="5.5" cy="5.5" r="3" stroke="currentColor" strokeWidth="1.4" />
+        <circle cx="12.5" cy="12.5" r="3" stroke="currentColor" strokeWidth="1.4" />
+        <path d="M7.8 7.8 10.2 10.2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      </svg>
+      <span className="fusion-executor-label">{tr(lang, '执行', 'Exec')}</span>
+    </span>
+    <select aria-label={tr(lang, '执行模型；选一个即开启 Fusion Next', 'Executor model; picking one enables Fusion Next')}
+      value={current} disabled={busy} data-active={Boolean(view?.worker)}
+      onChange={event => choose(event.target.value)}>
+      <option value="">{tr(lang, '关闭', 'Off')}</option>
       {groups.map(group => <optgroup key={group.id} label={group.name}>
         {group.models.map(model => <option key={model.id} value={`${group.id}/${model.id}`}>{model.name}</option>)}
       </optgroup>)}
     </select>
-    {view?.selected && <span style={{ flexShrink: 0 }}>{tr(lang, '· Fusion Next 进行中', '· Fusion active')}</span>}
-    {error && <span role="status" style={{ color: 'var(--dsw-alias-error, #d33)' }}>{error}</span>}
-    {view?.worker && <FusionStatus sessionId={sessionId} attentionOnly />}
+    {error && <span role="status" title={error}>⚠</span>}
   </div>
 }

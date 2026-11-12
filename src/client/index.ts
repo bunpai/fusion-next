@@ -5,7 +5,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-model-selection/client'
 import { FusionSettings } from './FusionSettings.js'
-import { FusionHint } from './FusionHint.js'
+import { FusionDockAttention, FusionHint } from './FusionHint.js'
 import { FusionPairPicker } from './FusionPairPicker.js'
 import { FusionTool, fusionControlTools } from './FusionTool.js'
 import { FusionConsole } from './FusionConsole.js'
@@ -40,10 +40,16 @@ export function apply(ctx: Context): void {
       const directory = scope.modelDirectories.directoryFor(sessionId)
       return { sessionId, directory: directory.store, load: () => { void directory.load().catch(() => undefined) } }
     }
-    scope.slots.inject('conversation.input.dock', () => scope.slots.register({
-      name: 'conversation.input.dock', id: 'fusion-next-pair-picker', order: 19,
+    // Executor picker sits in the composer tool row beside the native model
+    // selector; choosing an executor is the Fusion Next switch.
+    scope.slots.inject('conversation.input.right', () => scope.slots.register({
+      name: 'conversation.input.right', id: 'fusion-next-executor', order: 5,
       inject: directoryInject,
     }, FusionPairPicker))
+    scope.slots.inject('conversation.input.dock', () => scope.slots.register({
+      name: 'conversation.input.dock', id: 'fusion-next-attention', order: 19,
+      inject: directoryInject,
+    }, FusionDockAttention))
     scope.slots.inject('conversation.input.dock', () => scope.slots.register({
       name: 'conversation.input.dock', id: 'fusion-next-configuration', order: 20,
       inject: directoryInject,
