@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { afterEach, describe, expect, it } from 'vitest'
 import { SqliteFusionStore } from '../src/task/sqlite-store.js'
 import { created, TASK } from './helpers.js'
-import { migrateFusionV2, openFusionV2, restoreFusionV1FromBackup, FUSION_V2_TABLES } from '../src/persistence/index.js'
+import { migrateFusionV2, openFusionV2, restoreFusionV1FromBackup, FUSION_NEXT_V2_TABLES } from '../src/persistence/index.js'
 
 const dirs: string[] = []
 const handles: DatabaseSync[] = []
@@ -41,7 +41,7 @@ describe('Fusion persistence v1 → v2 additive migration', () => {
     const db = raw(file)
     expect(db.prepare('PRAGMA user_version').get()?.user_version).toBe(2)
     const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(row => row.name)
-    expect(tables).toEqual(expect.arrayContaining([...FUSION_V2_TABLES, 'tasks', 'artifacts', 'documents']))
+    expect(tables).toEqual(expect.arrayContaining([...FUSION_NEXT_V2_TABLES, 'tasks', 'artifacts', 'documents']))
     expect(db.prepare('SELECT id FROM tasks').get()?.id).toBe(TASK)
     expect(Buffer.from(db.prepare('SELECT bytes FROM artifacts').get()?.bytes as Uint8Array).toString()).toBe('legacy evidence')
     expect(db.prepare('SELECT json FROM documents WHERE id=?').get('legacy:record')?.json).toBe('{"keep":true}')

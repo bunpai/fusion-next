@@ -1,4 +1,4 @@
-/** What fusion_wait should do once the resident Worker handle is already gone. */
+/** What fusion_next_wait should do once the resident Worker handle is already gone. */
 export declare function absentWorkerOutcome(input: {
     pendingEffects: number;
     outcomeUnknown: boolean;

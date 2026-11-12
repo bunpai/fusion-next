@@ -83,7 +83,7 @@ export function FusionSettings() {
     ...(value.cacheKeepalive ? { cacheKeepalive: { ...value.cacheKeepalive, [role]: role === 'lead' ? 'auto' : false } } : {}) }))
   useEffect(() => {
     const abort = new AbortController()
-    void fetch('/api/model-fusion?view=settings', { credentials: 'same-origin', cache: 'no-store', signal: abort.signal })
+    void fetch('/api/fusion-next?view=settings', { credentials: 'same-origin', cache: 'no-store', signal: abort.signal })
       .then(async response => { if (!response.ok) throw new Error(tr(lang, '无法读取 Fusion 设置', 'Cannot read Fusion settings')); return response.json() as Promise<SettingsState> })
       .then(value => { setState(value); setDraft(value.pair ?? {}) })
       .catch(error => { if (!abort.signal.aborted) setError(String(error)) })
@@ -96,16 +96,16 @@ export function FusionSettings() {
       const { outputTokens, ...rest } = draft
       const limits = Object.fromEntries(Object.entries(outputTokens ?? {}).filter(([, tokens]) => Number.isSafeInteger(tokens) && Number(tokens) > 0))
       const pair = { ...rest, ...(Object.keys(limits).length ? { outputTokens: limits } : {}) }
-      const response = await fetch('/api/model-fusion', { method: 'POST', credentials: 'same-origin',
+      const response = await fetch('/api/fusion-next', { method: 'POST', credentials: 'same-origin',
         headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'configure', revision: state.revision, pair }) })
       const result = await response.json() as { revision: number; error?: string }
       if (!response.ok) throw new Error(result.error ?? tr(lang, '保存失败，请刷新后重试', 'Save failed; refresh and try again'))
-      const current = await fetch('/api/model-fusion?view=settings', { credentials: 'same-origin', cache: 'no-store' })
+      const current = await fetch('/api/fusion-next?view=settings', { credentials: 'same-origin', cache: 'no-store' })
       if (!current.ok) throw new Error(tr(lang, '配置已提交，但暂时无法确认，请刷新', 'Saved, but not confirmed yet; refresh'))
       const confirmed = await current.json() as SettingsState
       setState(confirmed); setDraft(confirmed.pair ?? {})
       settingsChanged()
-      setNotice(tr(lang, '组合已保存并启用。可以在模型菜单中选择 Fusion · 自动。', 'Pair saved and enabled. Choose Fusion · auto in the model menu.'))
+      setNotice(tr(lang, '组合已保存并启用。可以在模型菜单中选择 Fusion Next · 自动。', 'Pair saved and enabled. Choose Fusion · auto in the model menu.'))
     } catch (error) { setError(error instanceof Error ? error.message : String(error)) }
     finally { setSaving(false) }
   }

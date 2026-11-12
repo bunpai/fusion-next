@@ -2,7 +2,7 @@ export declare class FusionError extends Error {
     readonly code: string;
     constructor(code: string, message: string);
 }
-export declare const FUSION_CONTEXT_BUDGET = "FUSION_CONTEXT_BUDGET";
+export declare const FUSION_NEXT_CONTEXT_BUDGET = "FUSION_NEXT_CONTEXT_BUDGET";
 export declare const REVISION_CONFLICT = "REVISION_CONFLICT";
 export declare const REVISION_STALE = "REVISION_STALE";
 export declare const EVENT_CONFLICT = "EVENT_CONFLICT";

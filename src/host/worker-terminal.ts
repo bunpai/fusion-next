@@ -1,4 +1,4 @@
-/** What fusion_wait should do once the resident Worker handle is already gone. */
+/** What fusion_next_wait should do once the resident Worker handle is already gone. */
 export function absentWorkerOutcome(input: { pendingEffects: number; outcomeUnknown: boolean; submitted: boolean }):
   { kind: 'recovery'; reason: string } | { kind: 'collect-report' } | { kind: 'incomplete' } {
   if (input.pendingEffects > 0 || input.outcomeUnknown) {
@@ -10,9 +10,9 @@ export function absentWorkerOutcome(input: { pendingEffects: number; outcomeUnkn
 /** Settlement notice text. It must match whether a report was persisted, and must not send the Lead back to a disposed Worker. */
 export function workerSettlementGuidance(submitted: boolean): string {
   if (submitted) {
-    return 'The Worker has ended and a structured report is already persisted. This notice is not task acceptance. Review the report and check evidence. Call fusion_wait only if that report has not been returned yet; it reads persisted state and does not restart the Worker.'
+    return 'The Worker has ended and a structured report is already persisted. This notice is not task acceptance. Review the report and check evidence. Call fusion_next_wait only if that report has not been returned yet; it reads persisted state and does not restart the Worker.'
   }
-  return 'The Worker has ended without a structured report. This notice is not task acceptance, and it is not a provider or quota outage. Call fusion_wait once: it returns the terminal status "worker ended without submitting a report" (WORKFLOW_INCOMPLETE) from persisted state and does not restart the Worker. Do not keep waiting.'
+  return 'The Worker has ended without a structured report. This notice is not task acceptance, and it is not a provider or quota outage. Call fusion_next_wait once: it returns the terminal status "worker ended without submitting a report" (WORKFLOW_INCOMPLETE) from persisted state and does not restart the Worker. Do not keep waiting.'
 }
 
 /**
@@ -37,8 +37,8 @@ export function workerStopExplanation(code: string): { reasonCode: string; next:
 /** Continue/switch is refused before the route is written. Say so when a switch was requested. */
 export function unsettledContinuationError(switching: boolean): { zh: string; en: string } {
   return switching
-    ? { zh: '中断的操作尚未确认结束，本次尚未切换模型。请先使用 /fusion recover <检查记录> 核对，再更换并继续。',
-      en: 'Interrupted operations are not confirmed finished, so this switch was not applied. Use /fusion recover <inspection note> first, then switch and continue.' }
-    : { zh: '中断的操作尚未确认结束，请先使用 /fusion recover 核对',
-      en: 'Interrupted operations are not confirmed finished; use /fusion recover first' }
+    ? { zh: '中断的操作尚未确认结束，本次尚未切换模型。请先使用 /fusion-next recover <检查记录> 核对，再更换并继续。',
+      en: 'Interrupted operations are not confirmed finished, so this switch was not applied. Use /fusion-next recover <inspection note> first, then switch and continue.' }
+    : { zh: '中断的操作尚未确认结束，请先使用 /fusion-next recover 核对',
+      en: 'Interrupted operations are not confirmed finished; use /fusion-next recover first' }
 }

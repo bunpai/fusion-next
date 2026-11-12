@@ -1,4 +1,4 @@
-export { FusionError, FUSION_CONTEXT_BUDGET, NEEDS_REPAIR, OUTCOME_UNKNOWN, SPEND_UNAUTHORIZED, STORE_MIGRATION_REQUIRED, USAGE_LEDGER_REQUIRED, WORK_ORDER_CONFLICT } from './errors.js';
+export { FusionError, FUSION_NEXT_CONTEXT_BUDGET, NEEDS_REPAIR, OUTCOME_UNKNOWN, SPEND_UNAUTHORIZED, STORE_MIGRATION_REQUIRED, USAGE_LEDGER_REQUIRED, WORK_ORDER_CONFLICT } from './errors.js';
 export * from './contracts.js';
 export { digestOf, sha256Hex } from './digest.js';
 export { reduce, reduceAll } from './task/reducer.js';

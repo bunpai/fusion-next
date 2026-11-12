@@ -34,7 +34,7 @@ describe('NativeFusionScopes.install tool order', () => {
       },
       readOnlyTools: () => {
         order.push('refreshTools')
-        return ['fusion_delegate', 'fusion_explore']
+        return ['fusion_next_delegate', 'fusion_next_explore']
       },
     })
     scopes.install(agent(), {
@@ -50,7 +50,7 @@ describe('NativeFusionScopes Host SDK compatibility', () => {
     canExecute: () => undefined,
     beforeRequest: () => {},
     installTools: () => [],
-    readOnlyTools: () => ['fusion_delegate'],
+    readOnlyTools: () => ['fusion_next_delegate'],
   })
   const binding = (): Parameters<NativeFusionScopes['install']>[1] => ({ schemaVersion: 1, sessionId: 'lead-1', taskId: TaskId('task-1'), selected: true, profile, prompts })
   it('installs on a Host without presentAs (0.2.2-rc.1): presentation is cosmetic', () => {

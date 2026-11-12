@@ -76,13 +76,13 @@ export function freezeChecks(order: WorkOrder, root: string, definitions: readon
     if (definition.baseline !== undefined && (definition.baseline !== 'no-new-failures' || definition.kind !== 'test'
       || !(BASELINE_PARSERS as readonly string[]).includes(definition.parser))) {
       throw new Error(`Acceptance check ${definition.id}: baseline "no-new-failures" needs kind "test" with a parser that names each failing test (${BASELINE_PARSERS.join(', ')}); `
-        + `this check has kind "${definition.kind}" and parser "${definition.parser}". Retry fusion_delegate with `
+        + `this check has kind "${definition.kind}" and parser "${definition.parser}". Retry fusion_next_delegate with `
         + (definition.parser === 'mocha' ? 'the mocha command run with --reporter tap and parser "tap", ' : 'one of those parsers for this suite, ')
         + 'or without baseline so every test must pass.')
     }
     for (const path of definition.definitionPaths) {
       if (!lstatSync(workspacePath(root, path), { throwIfNoEntry: false })?.isFile()) {
-        throw new Error(`Acceptance check ${definition.id}: definitionPaths must name existing regular files whose bytes stay unchanged; ${JSON.stringify(path)} is not one. Keep existing acceptance files here; new regression tests belong in allowedPaths and can still run through the acceptance command. Retry fusion_delegate with corrected definitionPaths; do not create placeholders or finish the task to release a lease.`)
+        throw new Error(`Acceptance check ${definition.id}: definitionPaths must name existing regular files whose bytes stay unchanged; ${JSON.stringify(path)} is not one. Keep existing acceptance files here; new regression tests belong in allowedPaths and can still run through the acceptance command. Retry fusion_next_delegate with corrected definitionPaths; do not create placeholders or finish the task to release a lease.`)
       }
     }
     return { definition: structuredClone(definition), plan: {
@@ -441,7 +441,7 @@ export async function runBaselineChecks(input: CheckInput & { checks: readonly F
     const parsed = run.evidence.state === 'completed' && !run.truncated ? parseTestFailures(check.definition.parser, run.text) : undefined
     if (!parsed) {
       throw new Error(`Baseline run of ${check.definition.id} could not be read (exit ${run.evidence.exitCode}, state ${run.evidence.state}). `
-        + `It needs a completed run with ${BASELINE_OUTPUT[check.definition.parser as BaselineParser]}. Retry fusion_delegate with a runnable command, or drop baseline to require every test to pass. `
+        + `It needs a completed run with ${BASELINE_OUTPUT[check.definition.parser as BaselineParser]}. Retry fusion_next_delegate with a runnable command, or drop baseline to require every test to pass. `
         + `Output tail: ${run.text.slice(-600)}`)
     }
     out.push({ definition: check.definition, plan: { ...check.plan, allowedFailures: parsed.failedIds } })

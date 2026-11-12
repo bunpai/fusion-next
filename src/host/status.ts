@@ -8,22 +8,22 @@ import { BindingRepository } from './bindings.js'
 /** English copies of the stage and detail texts; the client shows them when DSH runs in English. */
 const EN: Record<string, string> = {
   '正在停止': 'Stopping', '正在等待已启动的操作收尾。': 'Waiting for started operations to finish.',
-  '等待检查': 'Needs inspection', '请先核对中断的操作，再使用 /fusion recover 提交检查记录。': 'Check the interrupted operations, then record the inspection with /fusion recover.',
+  '等待检查': 'Needs inspection', '请先核对中断的操作，再使用 /fusion-next recover 提交检查记录。': 'Check the interrupted operations, then record the inspection with /fusion-next recover.',
   '已取消': 'Cancelled', '等待确认': 'Waiting for approval', '请在 DSH 的权限提示中处理待确认操作。': 'Handle the pending approval in DSH\'s permission prompt.',
-  '等待额度': 'Waiting for quota', '请前往设置 → Fusion 查看额度，处理后使用 /fusion resume。': 'See Settings → Fusion for the quota, then use /fusion resume.',
-  '已暂停': 'Paused', '使用 /fusion status 查看状态，确认后可用 /fusion resume 继续。': 'Check /fusion status, then continue with /fusion resume.',
+  '等待额度': 'Waiting for quota', '请前往设置 → Fusion Next 查看额度，处理后使用 /fusion-next resume。': 'See Settings → Fusion for the quota, then use /fusion-next resume.',
+  '已暂停': 'Paused', '使用 /fusion-next status 查看状态，确认后可用 /fusion-next resume 继续。': 'Check /fusion-next status, then continue with /fusion-next resume.',
   '完成': 'Done', '验证': 'Verifying',
   'Worker 模型服务提示额度已耗尽，当前任务和文件已保留。恢复额度后发送消息继续。': 'The Sidekick provider reported exhausted quota; the task and files are kept. Send a message to continue once quota is back.',
   '等待反馈': 'Needs your input', 'Worker 已达到本任务的执行次数上限，现有结果已保留。请查看会话中的未完成说明。': 'The Sidekick reached this task\'s step limit; its results are kept. See the unfinished notes in the conversation.',
   '就绪': 'Ready', '探索尚未完成，请查看会话中的阻塞说明；补充信息后会继续原 Worker。': 'Exploration is unfinished: see the blocker in the conversation; the same Sidekick continues once you add the information.',
   '分析': 'Analysing', '执行': 'Working', '修改': 'Revising', '审查': 'Reviewing',
   '请处理 DSH 的待确认操作。': 'Handle the pending DSH approval.', '请查看会话中的问题或阻塞说明。': 'See the question or blocker in the conversation.',
-  '请前往设置 → Fusion 查看调用额度。': 'See Settings → Fusion for the request quota.', '请查看 /fusion status 并核对中断的操作。': 'Check /fusion status and the interrupted operations.',
-  '确认任务状态后，使用 /fusion resume 继续。': 'Confirm the task state, then continue with /fusion resume.',
-  '未完成': 'Unfinished', '请查看会话中的错误和 /fusion status。': 'See the error in the conversation and /fusion status.',
-  '完成状态尚未确认，请查看 /fusion status。': 'Completion is unconfirmed; see /fusion status.',
+  '请前往设置 → Fusion 查看调用额度。': 'See Settings → Fusion for the request quota.', '请查看 /fusion-next status 并核对中断的操作。': 'Check /fusion-next status and the interrupted operations.',
+  '确认任务状态后，使用 /fusion-next resume 继续。': 'Confirm the task state, then continue with /fusion-next resume.',
+  '未完成': 'Unfinished', '请查看会话中的错误和 /fusion-next status。': 'See the error in the conversation and /fusion-next status.',
+  '完成状态尚未确认，请查看 /fusion-next status。': 'Completion is unconfirmed; see /fusion-next status.',
   '需要调整做法': 'Needs a different approach', '等待模型': 'Waiting for the model',
-  '继续消息的投递结果尚未确认。检查会话后使用 /fusion recover 提交检查记录。': 'Delivery of the continuation is unconfirmed. Check the conversation, then use /fusion recover.',
+  '继续消息的投递结果尚未确认。检查会话后使用 /fusion-next recover 提交检查记录。': 'Delivery of the continuation is unconfirmed. Check the conversation, then use /fusion-next recover.',
 }
 const english = (text: string | null | undefined) => text == null ? text : EN[text] ?? text
 
@@ -31,11 +31,11 @@ export function taskStage(state: TaskState, checking: boolean, workerStepLimitRe
   const control = state.control
   const value = (stage: string, detail: string | null = null, attention = false) => ({ stage, detail, attention })
   if (control.mode === 'stop-requested') return value('正在停止', '正在等待已启动的操作收尾。', true)
-  if (control.recovering || control.outcomeUnknown) return value('等待检查', '请先核对中断的操作，再使用 /fusion recover 提交检查记录。', true)
+  if (control.recovering || control.outcomeUnknown) return value('等待检查', '请先核对中断的操作，再使用 /fusion-next recover 提交检查记录。', true)
   if (control.mode === 'cancelled') return value('已取消')
   if (control.pendingApprovalIds.length) return value('等待确认', '请在 DSH 的权限提示中处理待确认操作。', true)
-  if (control.budgetBlocked) return value('等待额度', '请前往设置 → Fusion 查看额度，处理后使用 /fusion resume。', true)
-  if (control.mode === 'paused') return value('已暂停', '使用 /fusion status 查看状态，确认后可用 /fusion resume 继续。', true)
+  if (control.budgetBlocked) return value('等待额度', '请前往设置 → Fusion Next 查看额度，处理后使用 /fusion-next resume。', true)
+  if (control.mode === 'paused') return value('已暂停', '使用 /fusion-next status 查看状态，确认后可用 /fusion-next resume 继续。', true)
   if (control.mode === 'completed' && state.phase === 'COMPLETED') return value('完成')
   if (checking) return value('验证')
   if (workerQuotaExhausted && ['WORKER_RUNNING', 'REWORK', 'PLANNING', 'NEEDS_DECISION'].includes(state.phase)) {
@@ -54,12 +54,12 @@ export function taskStage(state: TaskState, checking: boolean, workerStepLimitRe
     case 'WAITING_APPROVAL': return value('等待确认', '请处理 DSH 的待确认操作。', true)
     case 'WAITING_USER': case 'NEEDS_DECISION': return value('等待反馈', '请查看会话中的问题或阻塞说明。', true)
     case 'WAITING_BUDGET': return value('等待额度', '请前往设置 → Fusion 查看调用额度。', true)
-    case 'RECOVERING': return value('等待检查', '请查看 /fusion status 并核对中断的操作。', true)
-    case 'PAUSED': return value('已暂停', '确认任务状态后，使用 /fusion resume 继续。', true)
+    case 'RECOVERING': return value('等待检查', '请查看 /fusion-next status 并核对中断的操作。', true)
+    case 'PAUSED': return value('已暂停', '确认任务状态后，使用 /fusion-next resume 继续。', true)
     case 'STOPPING': return value('正在停止', null, true)
-    case 'FAILED': return value('未完成', '请查看会话中的错误和 /fusion status。', true)
+    case 'FAILED': return value('未完成', '请查看会话中的错误和 /fusion-next status。', true)
     case 'CANCELLED': return value('已取消')
-    case 'COMPLETED': return value('等待检查', '完成状态尚未确认，请查看 /fusion status。', true)
+    case 'COMPLETED': return value('等待检查', '完成状态尚未确认，请查看 /fusion-next status。', true)
   }
 }
 
@@ -96,7 +96,7 @@ function readStatus(store: SqliteFusionStore, sessionId: string, index: StatusIn
       detail: `${waiting.map(([role]) => role === 'lead' ? 'Lead' : 'Sidekick').join('、')} 已暂停。请查看原因后继续。`,
       detailEn: `${waiting.map(([role]) => role === 'lead' ? 'Lead' : 'Sidekick').join(' and ')} paused. See the reason, then continue.`, attention: true } : {}
   const pendingDelivery = modelControl?.operation && ['prepared', 'dispatching'].includes(modelControl.operation.state)
-    ? { stage: '等待检查', detail: '继续消息的投递结果尚未确认。检查会话后使用 /fusion recover 提交检查记录。', attention: true } : {}
+    ? { stage: '等待检查', detail: '继续消息的投递结果尚未确认。检查会话后使用 /fusion-next recover 提交检查记录。', attention: true } : {}
   const stage = { ...taskStage(state, checking, workerStepLimitReached, workerQuotaExhausted), ...modelStage, ...pendingDelivery }
   return { ...base, task: { id: taskId, revision: state.revision, ...stage, stageEn: english(stage.stage)!,
     detailEn: 'detailEn' in stage && stage.detailEn ? stage.detailEn : english(stage.detail) ?? null, ...(modelControl ? { modelControl } : {}), verification: state.verification,

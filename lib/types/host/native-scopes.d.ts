@@ -23,6 +23,15 @@ export interface FusionScopeCallbacks {
         defaultMaxTokens?: number;
         testedOutputCap?: number;
     }>;
+    /**
+     * Reports the physical route this installer applied via agent.model.select().
+     * The selection listener uses it to recognise its own journal echo (0.2.2
+     * journals every select) instead of reading it as a user's menu action.
+     */
+    onPhysicalRouteSelected?(agentId: string, route: {
+        provider: string;
+        model: string;
+    }): void;
     /** Read-stage tools, presented natively. Undefined restores the native composition. */
     readOnlyTools?(agent: Agent, binding: SessionBinding, role: Role): readonly string[] | undefined;
     installTools(scope: Context, agent: Agent, binding: SessionBinding, role: Role): readonly (() => void)[];
@@ -31,6 +40,7 @@ export interface FusionScopeCallbacks {
 export declare class NativeFusionScopes {
     #private;
     private readonly callbacks;
+    static installSeq: number;
     constructor(callbacks: FusionScopeCallbacks);
     get(agent: Agent): {
         binding: SessionBinding;

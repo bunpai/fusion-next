@@ -18,7 +18,7 @@ export function FusionRecovery({ sessionId, task }: { sessionId: string; task: N
   const action = async (name: string) => {
     setBusy(true); setError(''); setNotice('')
     try {
-      const response = await fetch('/api/model-fusion', { method: 'POST', credentials: 'same-origin',
+      const response = await fetch('/api/fusion-next', { method: 'POST', credentials: 'same-origin',
         headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: name, sessionId, taskId: task.id,
           revision: control.revision, role, route, ...(dueAt ? { dueAt: new Date(dueAt).toISOString() } : {}) }) })
       const result = await response.json() as { error?: string }
@@ -30,10 +30,10 @@ export function FusionRecovery({ sessionId, task }: { sessionId: string; task: N
   const loadCatalog = async () => {
     setError('')
     try {
-      const response = await fetch('/api/model-fusion?view=catalog', { credentials: 'same-origin', cache: 'no-store' })
+      const response = await fetch('/api/fusion-next?view=catalog', { credentials: 'same-origin', cache: 'no-store' })
       if (!response.ok) throw new Error(tr(lang, '无法读取模型列表', 'Cannot read the model list'))
       const value = await response.json() as SettingsCatalog
-      setCatalog({ ...value, groups: value.groups.filter(group => group.id !== 'dsh-model-fusion') })
+      setCatalog({ ...value, groups: value.groups.filter(group => group.id !== 'fusion-next') })
     } catch (error) { setError(String(error)) }
   }
   return <section className="fusion-recovery" aria-label={tr(lang, 'Fusion 恢复操作', 'Fusion recovery')}>
@@ -45,7 +45,7 @@ export function FusionRecovery({ sessionId, task }: { sessionId: string; task: N
     {control.schedule && <p role="status">{tr(lang, '定时继续', 'Scheduled continuation')}: {new Date(control.schedule.dueAt).toLocaleString()} · {
       ({ scheduled: tr(lang, '已安排', 'scheduled'), cancelled: tr(lang, '已取消', 'cancelled'), fired: tr(lang, '已执行一次', 'ran once'), failed: tr(lang, '未能执行', 'failed') })[control.schedule.state]}{control.schedule.reason ? ` · ${control.schedule.reason}` : ''}</p>}
     {control.operation && ['prepared', 'dispatching'].includes(control.operation.state) && <p role="alert">{tr(lang, '上次继续操作的投递结果尚未确认。请检查会话；系统不会自动重发。', 'Delivery of the last continuation is unconfirmed. Check the conversation; nothing is resent automatically.')}</p>}
-    {(task.recovering || task.outcomeUnknown) && <p role="alert">{tr(lang, '中断的操作尚未核对。继续和更换模型都不会生效，本次也不会切换模型。请先用 /fusion recover <检查记录> 提交核对，再继续或更换 Sidekick。设置里保存的新组合不会改写这个会话。', 'Interrupted operations are not inspected yet. Continue and model switching do nothing, and this attempt does not change the model. Record the inspection with /fusion recover <note>, then continue or switch the Sidekick. A new pair saved in Settings does not rewrite this conversation.')}</p>}
+    {(task.recovering || task.outcomeUnknown) && <p role="alert">{tr(lang, '中断的操作尚未核对。继续和更换模型都不会生效，本次也不会切换模型。请先用 /fusion-next recover <检查记录> 提交核对，再继续或更换 Sidekick。设置里保存的新组合不会改写这个会话。', 'Interrupted operations are not inspected yet. Continue and model switching do nothing, and this attempt does not change the model. Record the inspection with /fusion-next recover <note>, then continue or switch the Sidekick. A new pair saved in Settings does not rewrite this conversation.')}</p>}
     {error && <p role="alert">{error}</p>}{notice && <p role="status">{notice}</p>}
     <fieldset disabled={busy || task.unsettledTools > 0 || task.pendingApprovals > 0 || task.recovering || task.outcomeUnknown}>
       <button onClick={() => { void action('continue') }}>{tr(lang, '继续一次', 'Continue once')}</button>

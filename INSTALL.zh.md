@@ -9,7 +9,7 @@
 点左侧栏的 **插件** → **添加插件**，在"包名或地址"里填：
 
 ```text
-dsh-model-fusion@0.2.9
+fusion-next@0.2.9
 ```
 
 发布版本已包含构建好的 `lib/`，不需要克隆或编译。装好后退出并重新打开 DSH Studio（插件在下次启动时生效）。
@@ -17,10 +17,10 @@ dsh-model-fusion@0.2.9
 ## Web 命令行
 
 ```sh
-dsh plugin --profile web add dsh-model-fusion@0.2.9
+dsh plugin --profile web add fusion-next@0.2.9
 ```
 
-`dsh` 不在 PATH 里时，指定一个受支持的 CLI：`npx @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile web add dsh-model-fusion@0.2.9`，或 `npx @deepseek-ai/dsh@0.2.1-rc.2 plugin --profile web add dsh-model-fusion@0.2.9`。
+`dsh` 不在 PATH 里时，指定一个受支持的 CLI：`npx @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile web add fusion-next@0.2.9`，或 `npx @deepseek-ai/dsh@0.2.1-rc.2 plugin --profile web add fusion-next@0.2.9`。
 这只会写入 `web` 配置。正在运行的 Web 服务需要重新打开一次，再刷新页面。
 
 ## 装好之后
@@ -34,8 +34,8 @@ dsh plugin --profile web add dsh-model-fusion@0.2.9
 ## 卸载
 
 ```sh
-dsh plugin --profile web remove dsh-model-fusion
+dsh plugin --profile web remove fusion-next
 ```
 
-桌面版在左侧栏的 **插件** 页面里卸载。Fusion 自己的记录在 `$DSH_HOME/plugins/dsh-model-fusion/state.sqlite`，
+桌面版在左侧栏的 **插件** 页面里卸载。Fusion 自己的记录在 `$DSH_HOME/plugins/fusion-next/state.sqlite`，
 想一并清除就删掉这个文件。

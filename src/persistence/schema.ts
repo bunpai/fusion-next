@@ -1,5 +1,5 @@
 /** SQLite v2 additive schema: legacy tasks/artifacts/documents are never dropped or rewritten. */
-export const FUSION_V2_TABLES = [
+export const FUSION_NEXT_V2_TABLES = [
   'fusion_runs', 'fusion_session_aliases', 'fusion_branch_lineage', 'fusion_agents',
   'fusion_generations', 'fusion_assignments', 'fusion_dependencies', 'fusion_transitions',
   'fusion_checkpoints', 'fusion_effects', 'fusion_events', 'fusion_decisions',
@@ -7,7 +7,7 @@ export const FUSION_V2_TABLES = [
   'fusion_worktrees', 'fusion_model_scores',
 ] as const
 
-export const FUSION_V2_SQL = `
+export const FUSION_NEXT_V2_SQL = `
 CREATE TABLE fusion_runs (
   id TEXT PRIMARY KEY, task_id TEXT NOT NULL, current_host_session TEXT NOT NULL,
   status TEXT NOT NULL, mode TEXT NOT NULL, revision INTEGER NOT NULL CHECK (revision >= 0),

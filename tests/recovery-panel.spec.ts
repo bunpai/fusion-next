@@ -34,7 +34,7 @@ describe('Fusion recovery panel', () => {
   it('shows the inspection gate and disables continue while recovering', () => {
     const root = render(task({ recovering: true }))
     const text = JSON.stringify(root.toJSON())
-    expect(text).toContain('/fusion recover')
+    expect(text).toContain('/fusion-next recover')
     expect(text).toContain('does not change the model')
     expect(text).toContain('does not rewrite this conversation')
     expect(text).toContain('"type":"fieldset","props":{"disabled":true}')

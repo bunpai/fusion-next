@@ -6,7 +6,7 @@
 
 - `~/dsh/dsh-test-home`：复制的 `profiles/desktop`（cordis.patch.yml + pnpm node_modules clone），独立 `plugins/`、`sessions/`、`storages/`、`.credentials.yaml`（CPA_API_KEY 通过 Web UI 凭据存储）。
 - `launch-host.cjs`：以 `ELECTRON_RUN_AS_NODE=1` 拉起 Electron host.js，IPC 父进程 + `DSH_HOME` 隔离 + `DSH_NEXT_PREFERENCES`（loopback、port 0、browserAccess false）。
-- 插件部署：`~/dsh/dsh-test-home/profiles/desktop/node_modules/dsh-model-fusion/` = 真实目录（node_modules 软链不被 kernel 发现），`lib/dsh-model-fusion.js` 从仓库 `scripts/build-host-local.mjs` 产物覆盖。
+- 插件部署：`~/dsh/dsh-test-home/profiles/desktop/node_modules/fusion-next/` = 真实目录（node_modules 软链不被 kernel 发现），`lib/fusion-next.js` 从仓库 `scripts/build-host-local.mjs` 产物覆盖。
 - 测试专用补丁：`cordis.patch.yml` + `local-bundles/dsh-agent-presets/cordis.patch.yml` 中 `tool-subagent-list-agents` 绑定 `disabled: true`（宿主 0.2.2-rc.1 的 dsh-tool-subagent-control 缺少 `./list-agents` exports 子路径，属应用版本偏斜，与插件无关；生产实例同样受影响，已按同一方式修复）。
 - `lifecycleBridge: true` + `hostSdkVersion` 不在配置 → `probeHostCapabilities` 以 `attested:true` 升级为 `operator-attested`（A04 显式人工确认路径）。
 
@@ -14,13 +14,13 @@
 
 | 项 | 证据 |
 |---|---|
-| 插件在 Host 加载 | `[my-plugins/dsh-model-fusion] loaded`，fiberPhase active |
+| 插件在 Host 加载 | `[my-plugins/fusion-next] loaded`，fiberPhase active |
 | 模型菜单 Fusion · 自动 | GUI 选择器分组 `Fusion` 显示 `Fusion · 自动`，选择生效（chip 更新） |
-| 配置 API | `POST /api/model-fusion {action:configure, revision, pair:{lead:{cpa,devin/swe-2},worker:{cpa,devin/swe-2-flash}}}` → `{ok:true}`，revision CAS 生效 |
+| 配置 API | `POST /api/fusion-next {action:configure, revision, pair:{lead:{cpa,devin/swe-2},worker:{cpa,devin/swe-2-flash}}}` → `{ok:true}`，revision CAS 生效 |
 | B02 v2 迁移在 Host 内运行 | `fusion-v2.sqlite` 创建，user_version=2，18 张表 |
 | C01 激活缝（fail-closed） | bridge OFF 时 `SessionLifecycle.activate` 抛 `HOST_CAPABILITY_DENIED [lifecycle.transition]`，库中零行 — A04 设计正确 |
 | C01 激活缝（attested 放行） | bridge ON：RUN_CREATED + RUN_ACTIVATED 入 v2 事件日志（1 run + 1 alias + 2 events） |
-| **真实 Fusion turn** | session-380184a7 日志：model/selection → request/header（dsh-model-fusion/auto）→ session/title（provider 经 Fusion 虚拟提供者生成标题）→ assistant/message 文本块 "就绪" → turn/end completed |
+| **真实 Fusion turn** | session-380184a7 日志：model/selection → request/header（fusion-next/auto）→ session/title（provider 经 Fusion 虚拟提供者生成标题）→ assistant/message 文本块 "就绪" → turn/end completed |
 | S03 切出（物理模型） | 选择 swe-2-flash 后 v2 写 RUN_SUSPEND_REQUESTED→RUN_SUSPENDED（e98d702 suspend 缝） |
 | S04 切回恢复 | 再选 Fusion · 自动 → RUN_RESTORE_REQUESTED→RUN_RESTORED，新 turn 完成（回复 "回来"） |
 | S15 重启持久化 | 真实 kill+relaunch 后 20 个 fusion_runs 全部保留（rev 一致，48 events），新会话 session-83f56d3f 重新激活 RUN_CREATED+ACTIVATED，turn 完成，标题经 Fusion 虚拟提供者生成 |

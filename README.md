@@ -105,7 +105,7 @@ Lead 等 Sidekick 干活时，可能要等好几分钟。模型的输入缓存�
 
 ## 数据存在哪里
 
-- **Fusion 自己的记录：** 任务说明、检查结果、用量、缓存统计和设置，都存在 `$DSH_HOME/plugins/dsh-model-fusion/state.sqlite`。`DSH_HOME` 默认是 `~/.dsh`。
+- **Fusion 自己的记录：** 任务说明、检查结果、用量、缓存统计和设置，都存在 `$DSH_HOME/plugins/fusion-next/state.sqlite`。`DSH_HOME` 默认是 `~/.dsh`。
 - **会话本身：** 由 DSH 保存，Fusion 不另外上传任何数据。
 - **想清空 Fusion 的记录：** 退出 DSH 后删除这个文件。设置也会一起清掉，下次打开时重新选组合即可。
 

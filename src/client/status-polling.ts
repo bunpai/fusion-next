@@ -36,7 +36,7 @@ function subscribe(sessionId: string, listener: () => void, expanded: () => bool
         abort.abort()
       }, 10000)
       try {
-        const response = await fetch(`/api/model-fusion?view=status&sessionId=${encodeURIComponent(sessionId)}`,
+        const response = await fetch(`/api/fusion-next?view=status&sessionId=${encodeURIComponent(sessionId)}`,
           { credentials: 'same-origin', cache: 'no-store', signal: abort.signal })
         if (!response.ok) throw new Error('unavailable')
         const status = await response.json() as FusionStatus

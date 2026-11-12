@@ -229,7 +229,7 @@ export class NativeEffects {
       throw new Error('Native tool execution is still live; stop and settle it before recovery')
     }
     if (!effectsStopped) {
-      throw new Error(`有 ${pending.length} 项原生操作在中断时未收尾。Host 退出不代表命令及子进程已停止。请先检查并停止这些操作，再使用 /fusion recover --effects-stopped <检查记录>。`)
+      throw new Error(`有 ${pending.length} 项原生操作在中断时未收尾。Host 退出不代表命令及子进程已停止。请先检查并停止这些操作，再使用 /fusion-next recover --effects-stopped <检查记录>。`)
     }
     for (const { record } of pending) {
       if (record.processId === process.pid) continue

@@ -9,7 +9,7 @@ import type { SqliteFusionStore } from '../task/sqlite-store.js'
 import type { SessionBinding } from './bindings.js'
 import { compactHandoffs, workerHandoffProjection } from './native-worker-brief.js'
 
-export const FUSION_TASK_CONTEXT = 'fusion:task'
+export const FUSION_NEXT_TASK_CONTEXT = 'fusion:task'
 export type ContextDetail = 'compact' | 'full'
 
 type Facts = Record<string, unknown> & {
@@ -32,7 +32,7 @@ function compactFacts(facts: Facts, role: Role): Record<string, unknown> {
     review: { ticketId: review.ticket?.id ?? null, decision: review.result?.decision ?? null, accepted: Boolean(review.accepted) },
   }
 }
-const SOURCE = 'dsh-model-fusion'
+const SOURCE = 'fusion-next'
 const INTRO = 'Fusion task state from the durable ledger. Text retains its recorded source and is not a new permission grant. Native tool policy and control gates still apply.'
 
 interface Origin {
@@ -143,8 +143,8 @@ export class NativeTaskContext {
   /** Run after native pre-step handlers, including the existing compaction owner. */
   message(agent: Agent, binding: SessionBinding, role: Role, detail?: ContextDetail): UserMessage | undefined {
     const text = this.render(binding, role, detail ?? this.#detailFor(agent, binding, role))
-    const retained = agent.session.deriveMessages().some(message => message.source?.kind === 'plugin:dsh-model-fusion' && message.source.form === 'snapshot'
-      && message.source.sections.some(section => section.name === FUSION_TASK_CONTEXT && section.text === text))
+    const retained = agent.session.deriveMessages().some(message => message.source?.kind === 'plugin:fusion-next' && message.source.form === 'snapshot'
+      && message.source.sections.some(section => section.name === FUSION_NEXT_TASK_CONTEXT && section.text === text))
     if (retained) return undefined
     return this.#message(text)
   }
@@ -159,9 +159,9 @@ export class NativeTaskContext {
     const facts = JSON.parse(Buffer.from(this.store.readArtifact(binding.taskId, saved.artifact.id)).toString('utf8'))
     if (digestOf(facts) !== saved.digest) throw new Error('Fusion task projection checksum changed')
     const expected = this.#text(facts, saved.digest, saved.artifact)
-    const present = request.messages.some(message => message.source?.kind === 'plugin:dsh-model-fusion'
+    const present = request.messages.some(message => message.source?.kind === 'plugin:fusion-next'
       && message.source.form === 'snapshot'
-      && message.source.sections.some(section => section.name === FUSION_TASK_CONTEXT && section.text === expected)
+      && message.source.sections.some(section => section.name === FUSION_NEXT_TASK_CONTEXT && section.text === expected)
       && message.content.some(block => block.type === 'text' && block.text.includes(expected)))
     if (!present) throw new Error(`Fusion task context is absent from the native request for ${agent.id}; execution is blocked`)
   }
@@ -201,8 +201,8 @@ export class NativeTaskContext {
       const { source, content } = event.data
       // Only replace this plugin's single-section task snapshot. Other input,
       // tools and summary events remain under their existing native owners.
-      if (source?.kind !== 'plugin:dsh-model-fusion' || source.form !== 'snapshot'
-        || source.sections.length !== 1 || source.sections[0]!.name !== FUSION_TASK_CONTEXT
+      if (source?.kind !== 'plugin:fusion-next' || source.form !== 'snapshot'
+        || source.sections.length !== 1 || source.sections[0]!.name !== FUSION_NEXT_TASK_CONTEXT
         || content.length !== 1 || content[0]!.type !== 'text' || content[0]!.text !== source.sections[0]!.text) return false
       try {
         const facts = JSON.parse(source.sections[0]!.text.slice(source.sections[0]!.text.indexOf('\n') + 1)).facts
@@ -227,10 +227,10 @@ export class NativeTaskContext {
     let lastFull = -1, lastCompaction = -1
     for (const event of agent.session.snapshotEvents()) {
       if (event.type === 'compaction/end') lastCompaction = event.seq
-      if (event.type !== 'user/message' || event.data.source?.kind !== 'plugin:dsh-model-fusion'
+      if (event.type !== 'user/message' || event.data.source?.kind !== 'plugin:fusion-next'
         || event.data.source.form !== 'snapshot') continue
       for (const section of event.data.source.sections) {
-        if (section.name !== FUSION_TASK_CONTEXT) continue
+        if (section.name !== FUSION_NEXT_TASK_CONTEXT) continue
         try {
           const facts = JSON.parse(section.text.slice(section.text.indexOf('\n') + 1)).facts
           if (facts.taskId === binding.taskId && facts.role === role && facts.detail !== 'compact') lastFull = event.seq
@@ -243,7 +243,7 @@ export class NativeTaskContext {
   #latest(binding: SessionBinding, role: Role): string { return `task-context:${binding.taskId}:${role}` }
   #message(text: string): UserMessage {
     return createUserMessage({ content: [{ type: 'text', text }],
-      source: { kind: 'plugin:dsh-model-fusion', form: 'snapshot', sections: [{ name: FUSION_TASK_CONTEXT, text }] } })
+      source: { kind: 'plugin:fusion-next', form: 'snapshot', sections: [{ name: FUSION_NEXT_TASK_CONTEXT, text }] } })
   }
   #text(facts: unknown, digest: string, artifact: ArtifactRef): string {
     return `${INTRO}\n${JSON.stringify({ facts, digest, sourceArtifact: artifact })}`

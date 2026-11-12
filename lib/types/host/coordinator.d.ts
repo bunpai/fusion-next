@@ -2,7 +2,7 @@ import type { Context } from '@deepseek-ai/cordis';
 import type { Agent } from '@deepseek-ai/dsh-agent';
 import type { GenerateOptions } from '@deepseek-ai/dsh-llm';
 import type { ToolExecution, ToolRunContext } from '@deepseek-ai/dsh-tools';
-import type { FusionEvent, Role, TaskId } from '../contracts.js';
+import type { FusionEvent, PhysicalRoute, Role, TaskId } from '../contracts.js';
 import { WorkspaceWriteLease } from '../execution/write-lease.js';
 import type { ResolvedProfile } from '../profile/resolve.js';
 import type { SqliteFusionStore } from '../task/sqlite-store.js';
@@ -31,6 +31,26 @@ export interface CoordinatorOptions {
     authorizeRequest(agent: Agent, binding: SessionBinding, role: Role, turn: number, step: number): void;
     /** Actual native stream admission, including auxiliary compaction calls. */
     resumeAuthorization?(binding: SessionBinding): string;
+    /** Relays routes the scope layer applied via agent.model.select() to the selection listener. */
+    onPhysicalRouteSelected?(agentId: string, route: {
+        provider: string;
+        model: string;
+    }): void;
+    /**
+     * Per-session route overrides from the composer pair picker (session-pair
+     * doc). When present for a session, it wins over the frozen binding profile
+     * for that role — this is what makes the per-session executor (and planner
+     * switches) take effect without re-binding the session.
+     */
+    sessionRoutes?(sessionId: string): {
+        lead?: PhysicalRoute;
+        worker?: PhysicalRoute;
+    } | undefined;
+    /** enforced-v3 only; operator opt-out: false makes the Lead a normal model (no tool ceiling, no read-only gate). */
+    leadSandbox?: boolean;
+    /** 'inherit' (default): Worker inherits the parent session's full toolset (DSH delegation semantics).
+     *  'restricted': apply the configured workerTools ceiling at start-time and execution. */
+    workerPolicy?: 'inherit' | 'restricted';
     reserveRequest?(request: GenerateOptions, binding: SessionBinding, role: Role): void;
     leaseRoot?: string;
     maxWorkerSteps?: number;
@@ -38,6 +58,10 @@ export interface CoordinatorOptions {
     commandMaxSeconds?: number;
     /** Test clock only; production retains the recovered fixed schedule. */
     keepaliveClock?: KeepaliveClock;
+    /** Post-commit observer for durable task events; used by the v2 shadow journal. */
+    onTaskEvent?(taskId: TaskId, type: FusionEvent['type'], payload: unknown): void;
+    /** S19: deny a workspace-relative write when ANOTHER run's open assignment claims the path. */
+    fileConflicts?(binding: SessionBinding, workspacePath: string): string | undefined;
 }
 /** At least a sentence that is not a stock stub. */
 export declare function substantiveReview(reason: string): boolean;
@@ -121,6 +145,11 @@ export declare class FusionCoordinator {
     readonly modelControl: NativeModelControl;
     readonly workflow: NativeWorkflow;
     readonly roleSandbox: NativeRoleSandbox;
+    /**
+     * Role route resolution: per-session pair-picker overrides win over the
+     * model-control view, which wins over the frozen binding profile.
+     */
+    routeFor(binding: SessionBinding, role: Role): PhysicalRoute;
     constructor(ctx: Context, store: SqliteFusionStore, options: CoordinatorOptions);
     state(id: TaskId): TaskState;
     append<T extends FusionEvent['type']>(id: TaskId, type: T, payload: Extract<FusionEvent, {

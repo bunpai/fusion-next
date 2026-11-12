@@ -1,29 +1,29 @@
 import { describe, expect, it } from 'vitest'
-import { FUSION_PROVIDER, FusionCatalogAdapter, FUSION_MODEL } from '../src/host/native-selection.js'
+import { FUSION_NEXT_PROVIDER, FusionCatalogAdapter, FUSION_NEXT_MODEL } from '../src/host/native-selection.js'
 import { savedLeadRoute } from '../src/host/settings.js'
 
 describe('FusionCatalogAdapter input modalities', () => {
   it('hides the pseudo-model from the catalog while still resolving it for legacy selections', async () => {
     const unconfigured = new FusionCatalogAdapter()
-    expect(await unconfigured.listModels(FUSION_PROVIDER)).toEqual([])
-    const resolved = await unconfigured.resolveModel(FUSION_PROVIDER, FUSION_MODEL)
-    expect(resolved).toMatchObject({ id: FUSION_MODEL, inputModalities: ['text'] })
+    expect(await unconfigured.listModels(FUSION_NEXT_PROVIDER)).toEqual([])
+    const resolved = await unconfigured.resolveModel(FUSION_NEXT_PROVIDER, FUSION_NEXT_MODEL)
+    expect(resolved).toMatchObject({ id: FUSION_NEXT_MODEL, inputModalities: ['text'] })
   })
 
   it('admits exactly what the configured Lead admits, unioned with text', async () => {
     const imageLead = new FusionCatalogAdapter(async () => ['image', 'text'])
-    const imageResolved = await imageLead.resolveModel(FUSION_PROVIDER, FUSION_MODEL)
+    const imageResolved = await imageLead.resolveModel(FUSION_NEXT_PROVIDER, FUSION_NEXT_MODEL)
     expect(imageResolved).toMatchObject({ inputModalities: ['text', 'image'] })
     const textLead = new FusionCatalogAdapter(async () => ['text'])
-    const textResolved = await textLead.resolveModel(FUSION_PROVIDER, FUSION_MODEL)
+    const textResolved = await textLead.resolveModel(FUSION_NEXT_PROVIDER, FUSION_NEXT_MODEL)
     expect(textResolved).toMatchObject({ inputModalities: ['text'] })
   })
 
   it('resolves the exact Fusion selection through the same declaration', async () => {
     const adapter = new FusionCatalogAdapter(async () => ['image'])
-    const resolved = await adapter.resolveModel(FUSION_PROVIDER, FUSION_MODEL)
-    expect(resolved).toMatchObject({ provider: FUSION_PROVIDER, id: FUSION_MODEL, inputModalities: ['text', 'image'] })
-    await expect(adapter.resolveModel(FUSION_PROVIDER, 'other')).rejects.toThrow('Unknown local Fusion selection')
+    const resolved = await adapter.resolveModel(FUSION_NEXT_PROVIDER, FUSION_NEXT_MODEL)
+    expect(resolved).toMatchObject({ provider: FUSION_NEXT_PROVIDER, id: FUSION_NEXT_MODEL, inputModalities: ['text', 'image'] })
+    await expect(adapter.resolveModel(FUSION_NEXT_PROVIDER, 'other')).rejects.toThrow('Unknown local Fusion selection')
   })
 })
 
@@ -33,6 +33,6 @@ describe('savedLeadRoute', () => {
     expect(savedLeadRoute(undefined)).toBeUndefined()
     expect(savedLeadRoute({})).toBeUndefined()
     expect(savedLeadRoute({ lead: { provider: 'llm-deepseek' } })).toBeUndefined()
-    expect(savedLeadRoute({ lead: { provider: FUSION_PROVIDER, model: FUSION_MODEL } })).toBeUndefined()
+    expect(savedLeadRoute({ lead: { provider: FUSION_NEXT_PROVIDER, model: FUSION_NEXT_MODEL } })).toBeUndefined()
   })
 })

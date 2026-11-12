@@ -10,7 +10,7 @@ import { FusionPairPicker } from './FusionPairPicker.js'
 import { FusionTool, fusionControlTools } from './FusionTool.js'
 import { bindLocale } from './i18n.js'
 
-export const name = 'dsh-model-fusion/client'
+export const name = 'fusion-next/client'
 export const inject = ['slots']
 
 export function apply(ctx: Context): void {

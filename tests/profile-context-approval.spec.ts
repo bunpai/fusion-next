@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { ArtifactId, OperationId, SessionId, SnapshotId, TaskId, WorkOrderId } from '../src/contracts.js'
-import { APPROVAL_SCOPE, FUSION_CONTEXT_BUDGET, PROFILE_UNAVAILABLE } from '../src/errors.js'
+import { APPROVAL_SCOPE, FUSION_NEXT_CONTEXT_BUDGET, PROFILE_UNAVAILABLE } from '../src/errors.js'
 import { answerApproval, consumeApproval, neverMeansDeny, pendingDoesNotExpire } from '../src/approval/logical.js'
 import { assertFinalBudget, boundedOverflowRecovery, inputBudget, measureRequest } from '../src/context/guard.js'
 import { evaluateReport } from '../src/evidence/gate.js'
@@ -95,7 +95,7 @@ describe('context guard', () => {
       quality: 'exact',
     }, policy)
     expect(measurement.inputTokens).toBe(25_000)
-    expectCode(() => assertFinalBudget(measurement, policy), FUSION_CONTEXT_BUDGET)
+    expectCode(() => assertFinalBudget(measurement, policy), FUSION_NEXT_CONTEXT_BUDGET)
   })
 
   it('stops overflow recovery after two non-shrinking attempts', () => {

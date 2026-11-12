@@ -8,10 +8,10 @@ import type { PhysicalRoute } from '../contracts.js'
 import type { ResolvedProfile } from '../profile/resolve.js'
 import type { FusionCoordinator } from './coordinator.js'
 
-export const FUSION_PROVIDER = 'dsh-model-fusion'
-export const FUSION_MODEL = 'auto'
+export const FUSION_NEXT_PROVIDER = 'fusion-next'
+export const FUSION_NEXT_MODEL = 'auto'
 export const isFusionSelection = (route: { provider?: string; model?: string } | undefined): boolean =>
-  route?.provider === FUSION_PROVIDER && route.model === FUSION_MODEL
+  route?.provider === FUSION_NEXT_PROVIDER && route.model === FUSION_NEXT_MODEL
 
 /** Resolves the configured Lead's declared input modalities; undefined means unconfigured or unverifiable. */
 export type LeadInputModalities = () => Promise<readonly ModelModality[] | undefined>
@@ -21,7 +21,7 @@ export type FusionDispatch = (options: GenerateOptions, route: PhysicalRoute) =>
 
 /**
  * Virtual local provider: the session and agent model state stay on
- * dsh-model-fusion/auto (UI identity + journal intent), while every stream is
+ * fusion-next/auto (UI identity + journal intent), while every stream is
  * dispatched through the configured Lead's physical route. Auxiliary callers
  * (session title) take the same route and never block a turn.
  */
@@ -31,7 +31,7 @@ export class FusionCatalogAdapter extends LlmAdapter {
     private readonly dispatch?: FusionDispatch,
     private readonly resolveLead?: () => PhysicalRoute | undefined,
   ) { super() }
-  override providerInfo(provider: string) { return { id: provider, name: 'Fusion' } }
+  override providerInfo(provider: string) { return { id: provider, name: 'Fusion Next' } }
   override async listModels(provider: string): Promise<readonly LlmModelInfo[]> {
     // No pseudo-model in the menu: with the composer pair pickers the session's
     // normal host selection is the planner and the dock picker sets the
@@ -40,11 +40,11 @@ export class FusionCatalogAdapter extends LlmAdapter {
     return []
   }
   override async resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
-    if (provider !== FUSION_PROVIDER || model !== FUSION_MODEL) throw new Error('Unknown local Fusion selection')
+    if (provider !== FUSION_NEXT_PROVIDER || model !== FUSION_NEXT_MODEL) throw new Error('Unknown local Fusion selection')
     // The Lead is the only role that reads user content, so the entry admits
     // exactly what the configured Lead admits; text-only until it resolves.
     const lead = (await this.leadInputModalities?.()) ?? []
-    return { provider, id: model, name: 'Fusion · 自动',
+    return { provider, id: model, name: 'Fusion Next · 自动',
       description: 'Lead 与 Worker 协作。在设置 → Fusion 中配置模型。',
       inputModalities: [...new Set<ModelModality>(['text', ...lead])] }
   }
@@ -57,7 +57,7 @@ export class FusionCatalogAdapter extends LlmAdapter {
       // the old adapter's semantics where auxiliary requests never block a turn.
       yield {
         type: 'finish',
-        reason: { kind: 'error', failure: new LlmError('Fusion 尚未就绪。请前往设置 → Fusion 配置 Lead 和 Worker。', 'FUSION_NOT_READY').failure }
+        reason: { kind: 'error', failure: new LlmError('Fusion 尚未就绪。请前往设置 → Fusion Next 配置 Lead 和 Worker。', 'FUSION_NEXT_NOT_READY').failure }
       }
       return
     }
@@ -106,7 +106,7 @@ export function installNativeFusionSelection(ctx: Context, input: {
    * selection is a normal physical model, the session is a Fusion session —
    * the host selection is the planner (Lead) and this route is the executor.
    * When it returns undefined the session is a plain session (or the legacy
-   * 'Fusion · 自动' path, which keeps the globally configured pair).
+   * 'Fusion Next · 自动' path, which keeps the globally configured pair).
    */
   workerOf?(sessionId: string): PhysicalRoute | undefined
   /**
@@ -139,7 +139,7 @@ export function installNativeFusionSelection(ctx: Context, input: {
       // layer only selects while a Fusion binding is active, so the effective
       // selection stays Fusion; the desired map must not be consulted either,
       // because the echo event also wrote itself there.
-      if (echoed && data.provider === echoed.provider && data.model === echoed.model) return { provider: FUSION_PROVIDER, model: FUSION_MODEL }
+      if (echoed && data.provider === echoed.provider && data.model === echoed.model) return { provider: FUSION_NEXT_PROVIDER, model: FUSION_NEXT_MODEL }
     }
     return data
   }
@@ -167,7 +167,7 @@ export function installNativeFusionSelection(ctx: Context, input: {
           // projection, otherwise it starts displaying the Lead as the selection.
           const intent = agent.session.snapshotEvents().findLast(event => event.type === 'model/selection')
           if (!isFusionSelection(intent?.data)) agent.session.append('model/selection', {
-            provider: FUSION_PROVIDER, model: FUSION_MODEL,
+            provider: FUSION_NEXT_PROVIDER, model: FUSION_NEXT_MODEL,
           })
         } else {
           // The physical selection IS the planner; mirror it into the session
@@ -224,7 +224,7 @@ export function installNativeFusionSelection(ctx: Context, input: {
         // A newly installed exact-Agent interceptor can wrap this listener;
         // its physical route is applied after this continuation returns.
         // The catalog adapter itself cannot dispatch any upstream request.
-        if (!selected(agent)) throw new Error('请先在设置 → Fusion 配置 Lead 和 Worker，再继续此会话。')
+        if (!selected(agent)) throw new Error('请先在设置 → Fusion Next 配置 Lead 和 Worker，再继续此会话。')
       } else if (selected(agent)) {
         // Session-pair mode: a physical selection IS the planner when an
         // executor stays configured for the session; only a binding whose

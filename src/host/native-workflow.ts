@@ -51,7 +51,7 @@ export class NativeWorkflow {
 
   observe(exec: Readonly<ToolExecution>, result: Readonly<ToolExecutionResult>, binding: SessionBinding, role: Role, read: boolean): boolean {
     // Required recovery pagination and a live job wait must neither spend nor erase the window.
-    if (exec.name === 'fusion_read_state' || exec.name === 'job_output') return false
+    if (exec.name === 'fusion_next_read_state' || exec.name === 'job_output') return false
     const id = `workflow-progress:${binding.taskId}:${exec.agent!.id}`, row = this.store.readDocument(id)
     const shell = isShellTool(exec.name) && !result.isError ? result.value as { exitCode?: unknown } : undefined
     const failed = result.isError || typeof shell?.exitCode === 'number' && shell.exitCode !== 0
@@ -77,7 +77,7 @@ export class NativeWorkflow {
     this.store.writeDocument(id, 0, { schemaVersion: 1, role, at: new Date().toISOString() })
     const progressId = `workflow-progress:${binding.taskId}:${agent.id}`, row = this.store.readDocument(progressId)
     this.store.writeDocument(progressId, row?.revision ?? 0, { schemaVersion: 1, milestone: this.milestone(binding), recent: [] })
-    agent.send(createUserMessage({ source: { kind: 'plugin:dsh-model-fusion', form: 'notice', summary: 'Fusion 检测到重复结果，正在调整执行方式' },
+    agent.send(createUserMessage({ source: { kind: 'plugin:fusion-next', form: 'notice', summary: 'Fusion 检测到重复结果，正在调整执行方式' },
       content: [{ type: 'text', text: 'The runtime detected repeated unchanged tool results. Use the evidence already collected and change the approach instead of repeating those calls. Continue the current task; delegate broad work if useful. Another unchanged cycle will pause this role without discarding progress.' }] }), 'next-step', false)
     return true
   }
@@ -85,7 +85,7 @@ export class NativeWorkflow {
   denyEffect(binding: SessionBinding): string {
     const id = `workflow-effect-denied:${binding.taskId}`
     if (!this.store.readDocument(id)) this.store.writeDocument(id, 0, { schemaVersion: 1, taskId: binding.taskId })
-    return 'FUSION_LEAD_READ_ONLY: execution belongs to the Sidekick. Use fusion_delegate for workspace changes or commands; fusion_explore for investigation. Lead takeover requires a current implementation report and a recorded rework review.'
+    return 'FUSION_NEXT_LEAD_READ_ONLY: execution belongs to the Sidekick. Use fusion_next_delegate for workspace changes or commands; fusion_next_explore for investigation. Lead takeover requires a current implementation report and a recorded rework review.'
   }
 
   deniedEffect(binding: SessionBinding): boolean { return Boolean(this.store.readDocument(`workflow-effect-denied:${binding.taskId}`)) }
@@ -95,7 +95,7 @@ export class NativeWorkflow {
     const id = `workflow-stop:${binding.taskId}:${agent.id}:${this.milestone(binding)}`
     if (this.store.readDocument(id)) return false
     this.store.writeDocument(id, 0, { schemaVersion: 1, role, at: new Date().toISOString() })
-    agent.send(createUserMessage({ source: { kind: 'plugin:dsh-model-fusion', form: 'notice', summary: 'Fusion 工作流尚未完成' },
+    agent.send(createUserMessage({ source: { kind: 'plugin:fusion-next', form: 'notice', summary: 'Fusion 工作流尚未完成' },
       content: [{ type: 'text', text: instruction }] }), 'next-step', false)
     return true
   }

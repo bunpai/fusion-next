@@ -22,7 +22,7 @@ export function FusionHistory() {
   useEffect(() => {
     const abort = new AbortController()
     setLoading(true); setError('')
-    void fetch(`/api/model-fusion?view=history&cursor=${encodeURIComponent(cursor)}`, { credentials: 'same-origin', cache: 'no-store', signal: abort.signal })
+    void fetch(`/api/fusion-next?view=history&cursor=${encodeURIComponent(cursor)}`, { credentials: 'same-origin', cache: 'no-store', signal: abort.signal })
       .then(async response => { if (!response.ok) throw new Error(tr(lang, '历史记录暂时无法读取', 'History is unavailable right now')); return response.json() as Promise<HistoryView> })
       .then(setPage).catch(error => { if (!abort.signal.aborted) setError(String(error)) })
       .finally(() => { if (!abort.signal.aborted) setLoading(false) })

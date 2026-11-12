@@ -134,7 +134,7 @@ often `job_output`, out of the request — used to leave the Lead with no delega
 
 Fusion now rebuilds the request table as **allowlist ∪ its own registry** after `next()` returns. Names the role is
 allowed to see are copied back from `tools.schemas(agent)` when another plugin dropped them. If a required `fusion_*`
-tool is not in that registry either, assembly throws `FUSION_TOOL_TABLE_INCOMPLETE` instead of sending the request.
+tool is not in that registry either, assembly throws `FUSION_NEXT_TOOL_TABLE_INCOMPLETE` instead of sending the request.
 Putting those names in `dsh-tool-search`'s `core` list is unnecessary once this build is installed; it remains harmless.
 
 ## Host behaviour Fusion does not own
@@ -150,11 +150,11 @@ These show up next to Fusion's own gates. Fusion does not patch the host to remo
   row `accepted` because no report was acknowledged. The next host start treats that row like any other unacknowledged
   dispatch and sets `recovering`. Continue and role switch both run only after `settled()`, which requires
   `recovering` to be clear, and the route is not written if that check fails. That inspection stays: Fusion cannot see
-  host file or process effects that were not in its own journal. Use `/fusion recover <inspection note>`, then continue
+  host file or process effects that were not in its own journal. Use `/fusion-next recover <inspection note>`, then continue
   or switch the Sidekick from the recovery panel. Saving a new pair in Settings changes the default for new
   conversations only.
 - **Natural Worker disposal.** DSH `0.2.0-rc.2` disposes a continuable child in `finishDisposal` and only then sends
-  `subagent-settled`. `fusion_wait` reads the persisted task when that handle is already gone. It asks for recovery
+  `subagent-settled`. `fusion_next_wait` reads the persisted task when that handle is already gone. It asks for recovery
   only when a native effect is still pending or the outcome is unknown. An ended Worker with no report is
   `WORKFLOW_INCOMPLETE`, not a quota or provider outage. On `0.2.1-rc.2` the same settlement flushes the child log
   and then closes the persistence handle. A later `stop` that sees `SessionHandleClosedError` treats that log as

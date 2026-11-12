@@ -57,7 +57,7 @@ export async function readHistoricalFusionActivity(ctx: Context, store: SqliteFu
     const [parent, child] = await Promise.all([ctx.sessionQuery.readSession(SessionId(parentId)), ctx.sessionQuery.readSession(SessionId(task.acceptedChild))])
     if (child.session.parentSession !== parentId) throw new Error('Fusion activity child ownership mismatch')
     const call = parent.events.find(event => event.type === 'tool/call' && event.data.callId === callId)
-    if (!call || call.type !== 'tool/call' || !['fusion_explore', 'fusion_delegate', 'fusion_rework'].includes(call.data.name)) return cached
+    if (!call || call.type !== 'tool/call' || !['fusion_next_explore', 'fusion_next_delegate', 'fusion_next_rework'].includes(call.data.name)) return cached
     const start = child.events.find(event => event.type === 'user/message' && event.data.id === messageId)
     if (!start) return cached
     const acceptedIds = new Set(tasks.flatMap(item => store.events(item.taskId).flatMap(event =>

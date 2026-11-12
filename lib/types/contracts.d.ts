@@ -1,5 +1,5 @@
 /**
- * Plugin-domain contracts for dsh-model-fusion.
+ * Plugin-domain contracts for fusion-next.
  * These are proposed types, not existing DSH API declarations.
  * Convert DSH branded IDs only in a version-pinned bridge (not landed).
  */
@@ -367,6 +367,7 @@ export type FusionEvent = EventEnvelope<'task/created', {
 }> | EventEnvelope<'work-order/prepared', {
     order: WorkOrder;
     reservedChild: SessionId;
+    parallel?: true;
 }> | EventEnvelope<'work-order/acceptance-amended', {
     workOrderId: WorkOrderId;
     acceptance: readonly AcceptanceCriterion[];

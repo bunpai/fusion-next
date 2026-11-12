@@ -36,7 +36,7 @@ export function FusionPairPicker({ sessionId, directory, load }: FusionPairPicke
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | undefined>()
   const refresh = () => {
-    void fetch(`/api/model-fusion?view=session-pair&sessionId=${encodeURIComponent(sessionId)}`,
+    void fetch(`/api/fusion-next?view=session-pair&sessionId=${encodeURIComponent(sessionId)}`,
       { credentials: 'same-origin', cache: 'no-store' })
       .then(async response => response.ok ? response.json() as Promise<PairView> : undefined)
       .then(data => setView(data))
@@ -46,7 +46,7 @@ export function FusionPairPicker({ sessionId, directory, load }: FusionPairPicke
   const choose = (value: string) => {
     if (busy) return
     setBusy(true); setError(undefined)
-    void fetch('/api/model-fusion', {
+    void fetch('/api/fusion-next', {
       method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ action: 'session-pair', sessionId, worker: value ? routeOf(value) ?? null : null }),
     }).then(async response => {
@@ -72,7 +72,7 @@ export function FusionPairPicker({ sessionId, directory, load }: FusionPairPicke
         {group.models.map(model => <option key={model.id} value={`${group.id}/${model.id}`}>{model.name}</option>)}
       </optgroup>)}
     </select>
-    {view?.selected && <span style={{ flexShrink: 0 }}>{tr(lang, '· Fusion 进行中', '· Fusion active')}</span>}
+    {view?.selected && <span style={{ flexShrink: 0 }}>{tr(lang, '· Fusion Next 进行中', '· Fusion active')}</span>}
     {error && <span role="status" style={{ color: 'var(--dsw-alias-error, #d33)' }}>{error}</span>}
     {view?.worker && <FusionStatus sessionId={sessionId} attentionOnly />}
   </div>

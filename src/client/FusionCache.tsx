@@ -43,7 +43,7 @@ function ModelCard({ row, onSaved }: { row: CacheModel; onSaved(): void }) {
   const save = async (body: Record<string, unknown>) => {
     setBusy(true); setError(undefined)
     try {
-      const response = await fetch('/api/model-fusion', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' },
+      const response = await fetch('/api/fusion-next', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ action: 'cache-setting', provider: row.provider, model: row.model, ...body }) })
       const result = await response.json() as { error?: string }
       if (!response.ok) throw new Error(result.error ?? tr(lang, '保存失败', 'Save failed'))
@@ -91,7 +91,7 @@ export function FusionCache({ refresh }: { refresh: number }) {
   const [reload, setReload] = useState(0)
   useEffect(() => {
     const abort = new AbortController()
-    void fetch('/api/model-fusion?view=cache', { credentials: 'same-origin', cache: 'no-store', signal: abort.signal })
+    void fetch('/api/fusion-next?view=cache', { credentials: 'same-origin', cache: 'no-store', signal: abort.signal })
       .then(async response => { if (!response.ok) throw new Error(tr(lang, '无法读取缓存设置', 'Cannot read cache settings')); return response.json() as Promise<{ checked: string; models: CacheModel[] }> })
       .then(value => { setRows(value.models); setChecked(value.checked) })
       .catch(reason => { if (!abort.signal.aborted) setError(String(reason)) })

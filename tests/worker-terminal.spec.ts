@@ -15,7 +15,7 @@ describe('settled Worker terminal status', () => {
   it('matches the settlement notice to whether a report was persisted', () => {
     expect(workerSettlementGuidance(false)).toContain('worker ended without submitting a report')
     expect(workerSettlementGuidance(false)).toContain('WORKFLOW_INCOMPLETE')
-    expect(workerSettlementGuidance(false)).not.toContain('use fusion_wait if they have not been collected')
+    expect(workerSettlementGuidance(false)).not.toContain('use fusion_next_wait if they have not been collected')
     expect(workerSettlementGuidance(true)).toContain('already persisted')
     expect(workerSettlementGuidance(true)).not.toContain('without a structured report')
   })

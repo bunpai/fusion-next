@@ -91,7 +91,7 @@ fix and reports it separately.
 
 ## Versions recorded at freeze
 
-- DSH plugin: `dsh-model-fusion` 0.2.0 installed under `~/.dsh` profiles; Host =
+- DSH plugin: `fusion-next` 0.2.0 installed under `~/.dsh` profiles; Host =
   DSH Studio (`deepseek-harness` 0.1.7-rc.2, driven from a local checkout of the same release).
 - Devin: CLI `3000.11.3` (`devin -p`, writes `cli/sessions.db`); Desktop
   `devin-next 3000.10.1035` wraps the same engine into `cli-next/sessions.db`.

@@ -9,11 +9,11 @@ import type {} from '@deepseek-ai/dsh-agent-preset-registry'
 import type { PhysicalRoute, Role, TokenMeasurement } from '../contracts.js'
 import { inputBudget, safetyTokens } from '../context/guard.js'
 import { digestOf } from '../digest.js'
-import { FUSION_CONTEXT_BUDGET } from '../errors.js'
+import { FUSION_NEXT_CONTEXT_BUDGET } from '../errors.js'
 import type { SqliteFusionStore } from '../task/sqlite-store.js'
 import type { SessionBinding } from './bindings.js'
 import { nativeRequestAgent } from './native-request.js'
-import { FUSION_TASK_CONTEXT, type NativeTaskContext } from './native-task-context.js'
+import { FUSION_NEXT_TASK_CONTEXT, type NativeTaskContext } from './native-task-context.js'
 import type { NativeAuxiliaryRequests } from './native-auxiliary.js'
 import { routeNativeCompaction } from './native-compaction.js'
 
@@ -60,11 +60,11 @@ export class NativeContextGuard {
     // on the current surface. Charge it too. JSON tool schemas use the public
     // message estimator with extra framing, rather than a private meter import.
     const text = (value: string) => meter.estimateMessage(createUserMessage({ content: [{ type: 'text', text: value }],
-      source: { kind: 'plugin:dsh-model-fusion' } }))
+      source: { kind: 'plugin:fusion-next' } }))
     const fixed = (system ? text(system) : 0) + (tools?.length ? text(JSON.stringify(tools)) : 0)
-    const actual = messages.reduce((total, message) => total + meter.estimateMessage(message.role !== 'user' || message.id !== undefined ? (message as Parameters<typeof meter.estimateMessage>[0]) : createUserMessage({ content: message.content, source: { kind: 'plugin:dsh-model-fusion' } })), 0) + fixed
-    const pinned = messages.flatMap(message => message.source?.kind === 'plugin:dsh-model-fusion'
-      && message.source.form === 'snapshot' ? message.source.sections.filter(section => section.name === FUSION_TASK_CONTEXT) : []).at(-1)
+    const actual = messages.reduce((total, message) => total + meter.estimateMessage(message.role !== 'user' || message.id !== undefined ? (message as Parameters<typeof meter.estimateMessage>[0]) : createUserMessage({ content: message.content, source: { kind: 'plugin:fusion-next' } })), 0) + fixed
+    const pinned = messages.flatMap(message => message.source?.kind === 'plugin:fusion-next'
+      && message.source.form === 'snapshot' ? message.source.sections.filter(section => section.name === FUSION_NEXT_TASK_CONTEXT) : []).at(-1)
     // A summary cannot shrink the required current task snapshot, system prompt
     // or tool schemas. Reject an impossible restore before charging a summary.
     const minimumRetainedInputTokens = fixed + (pinned ? text(pinned.text) : 0)
@@ -109,7 +109,7 @@ export class NativeContextGuard {
       catch (error) {
         const reason = `Fusion 上下文检查失败：${error instanceof Error ? error.message : String(error)}`
         if (!auxiliary && request.purpose !== 'session-title') guard.blocked(owner, reason)
-        yield { type: 'finish', reason: { kind: 'error', failure: new LlmError(reason, 'FUSION_CONTEXT_UNAVAILABLE').failure } }
+        yield { type: 'finish', reason: { kind: 'error', failure: new LlmError(reason, 'FUSION_NEXT_CONTEXT_UNAVAILABLE').failure } }
         return
       }
       request.signal?.throwIfAborted()
@@ -121,7 +121,7 @@ export class NativeContextGuard {
         const reason = `Fusion 上下文 ${check.measurement.inputTokens} 超过本轮预算 ${check.budget}（估算）`
         if (isAgentLoopRequest(request) && request.purpose === undefined) guard.#rejected.set(agent, { owner, recordId, ...check })
         else if (!auxiliary && request.purpose !== 'session-title') guard.blocked(owner, reason)
-        yield { type: 'finish', reason: { kind: 'error', failure: new LlmError(reason, FUSION_CONTEXT_BUDGET).failure } }
+        yield { type: 'finish', reason: { kind: 'error', failure: new LlmError(reason, FUSION_NEXT_CONTEXT_BUDGET).failure } }
         return
       }
       if (isAgentLoopRequest(request) && request.purpose === undefined) guard.#rejected.delete(agent)
@@ -133,7 +133,7 @@ export class NativeContextGuard {
     }, { prepend: true })
     const disposeRecovery = this.ctx.on('agent/request-error', async ({ agent, turn, step, failure, signal }, next) => {
       const rejected = this.#rejected.get(agent)
-      if (failure.code !== FUSION_CONTEXT_BUDGET || !rejected) return next()
+      if (failure.code !== FUSION_NEXT_CONTEXT_BUDGET || !rejected) return next()
       this.#rejected.delete(agent)
       const { owner } = rejected
       const key = `context-recovery:${owner.binding.taskId}:${agent.id}:${turn}:${step}`

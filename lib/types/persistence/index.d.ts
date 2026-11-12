@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 export { restoreFusionV1FromBackup } from './restore.js';
-export { FUSION_V2_TABLES } from './schema.js';
+export { FUSION_NEXT_V2_TABLES } from './schema.js';
 export interface FusionMigrationResult {
     readonly migrated: boolean;
     readonly version: 2;

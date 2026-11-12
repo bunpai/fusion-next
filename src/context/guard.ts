@@ -1,6 +1,6 @@
 import type { RoleContextPolicy, TokenMeasurement } from '../contracts.js'
 import { digestOf } from '../digest.js'
-import { FUSION_CONTEXT_BUDGET, FusionError } from '../errors.js'
+import { FUSION_NEXT_CONTEXT_BUDGET, FusionError } from '../errors.js'
 
 export interface RequestParts {
   systemTokens: number
@@ -64,7 +64,7 @@ export function assertFinalBudget(measurement: TokenMeasurement, policy: RoleCon
   const budget = inputBudget(policy, measurement.contextWindow, measurement.reservedOutputTokens, measurement.quality)
   if (measurement.inputTokens > budget) {
     throw new FusionError(
-      FUSION_CONTEXT_BUDGET,
+      FUSION_NEXT_CONTEXT_BUDGET,
       `final request ${measurement.inputTokens} exceeds budget ${budget} (${measurement.quality})`,
     )
   }

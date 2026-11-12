@@ -35,7 +35,7 @@ await esbuild.build({
 const bundle = readFileSync(out, 'utf8')
 const map = readFileSync(`${out}.map`, 'utf8')
 const wrapped = `window.__ModuleLoader__.load({
-\tid: "dsh-model-fusion",
+\tid: "fusion-next",
 \tfactory: (require) => {
 \t\tvar module = { exports: {} };
 \t\tvar exports = module.exports;

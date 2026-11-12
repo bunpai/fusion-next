@@ -17,7 +17,7 @@ export interface ProjectedTools<T extends NamedTool> {
  * unions Fusion's registrations, so a writing role is not narrowed.
  *
  * A Fusion tool is required only when this agent actually registered it and the role
- * may see it. `fusion_read_state` and `fusion_delegate_text` are registered only for
+ * may see it. `fusion_next_read_state` and `fusion_next_delegate_text` are registered only for
  * model-like profiles; a legacy allowlist that merely names them is not incomplete.
  * Restore copies every permitted registry tool before the gap is measured, so `missing`
  * stays empty for every table this function itself builds. The field remains so a later
@@ -52,5 +52,5 @@ export function projectRoleTools<T extends NamedTool>(input: {
 
 /** Shown when the role's Fusion tools cannot be restored. The request must not proceed as a normal completion. */
 export function fusionToolDiagnostic(missing: readonly string[]): string {
-  return `FUSION_TOOL_TABLE_INCOMPLETE: required Fusion tools are absent from this request (${missing.join(', ')}). Another plugin replaced the tool table and Fusion could not restore them from its own registry. Do not tell the user that delegation is unavailable by design, and do not end the task as completed with no work. Report this diagnostic.`
+  return `FUSION_NEXT_TOOL_TABLE_INCOMPLETE: required Fusion tools are absent from this request (${missing.join(', ')}). Another plugin replaced the tool table and Fusion could not restore them from its own registry. Do not tell the user that delegation is unavailable by design, and do not end the task as completed with no work. Report this diagnostic.`
 }

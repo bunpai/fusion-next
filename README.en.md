@@ -107,7 +107,7 @@ The real PowerShell ACL test denied the Lead's `Set-Content probe.txt test` comm
 
 ## Data
 
-- **Fusion's own records:** briefs, check results, usage, cache statistics and settings live in `$DSH_HOME/plugins/dsh-model-fusion/state.sqlite`. `DSH_HOME` defaults to `~/.dsh`.
+- **Fusion's own records:** briefs, check results, usage, cache statistics and settings live in `$DSH_HOME/plugins/fusion-next/state.sqlite`. `DSH_HOME` defaults to `~/.dsh`.
 - **The conversations themselves:** stored by DSH. Fusion uploads nothing else.
 - **To clear Fusion's records:** quit DSH and delete that file. Settings go with it; choose the pair again next time.
 

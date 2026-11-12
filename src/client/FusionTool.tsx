@@ -5,14 +5,14 @@ import { activityRows } from './activity-model.js'
 import { tr, useLang } from './i18n.js'
 import { ActivityCard, activityStyles } from './ActivityRows.js'
 
-export const fusionControlTools = ['fusion_read_state', 'fusion_delegate_text', 'fusion_explore', 'fusion_delegate', 'fusion_rework', 'fusion_wait', 'fusion_review_result',
-  'fusion_submit_result', 'fusion_takeover', 'fusion_finish_direct', 'fusion_read_evidence'] as const
+export const fusionControlTools = ['fusion_next_read_state', 'fusion_next_delegate_text', 'fusion_next_explore', 'fusion_next_delegate', 'fusion_next_rework', 'fusion_next_wait', 'fusion_next_review_result',
+  'fusion_next_submit_result', 'fusion_next_takeover', 'fusion_next_finish_direct', 'fusion_next_read_evidence'] as const
 
 /** Keep internal coordination out of the normal conversation. Errors remain visible. */
 export function FusionTool({ block, sessionId, callId, toolName, cwd, openFile }: ToolCallViewProps) {
   const lang = useLang()
   const settled = 'kind' in block
-  const tracksActivity = toolName === 'fusion_delegate_text' || toolName === 'fusion_explore' || toolName === 'fusion_delegate' || toolName === 'fusion_rework'
+  const tracksActivity = toolName === 'fusion_next_delegate_text' || toolName === 'fusion_next_explore' || toolName === 'fusion_next_delegate' || toolName === 'fusion_next_rework'
   const [snapshot, setSnapshot] = useState<{ key: string; events: FusionActivity[]; done: boolean; failed?: boolean }>()
   const key = `${sessionId}:${callId}`
   useEffect(() => {
@@ -27,7 +27,7 @@ export function FusionTool({ block, sessionId, callId, toolName, cwd, openFile }
       const deadline = setTimeout(() => abort?.abort(), 10000)
       let again = true, delay = 2000
       try {
-        const response = await fetch(`/api/model-fusion?view=activity&sessionId=${encodeURIComponent(sessionId)}&callId=${encodeURIComponent(callId)}&after=${cursor}`,
+        const response = await fetch(`/api/fusion-next?view=activity&sessionId=${encodeURIComponent(sessionId)}&callId=${encodeURIComponent(callId)}&after=${cursor}`,
           { credentials: 'same-origin', cache: 'no-store', signal: abort.signal })
         if (!response.ok) throw new Error('Activity unavailable')
         const page = await response.json() as FusionActivityPage

@@ -40,7 +40,7 @@ export function FusionStatus({ sessionId, attentionOnly = false }: { sessionId: 
   const [expandedTask, setExpandedTask] = useState<string>()
   const snapshot = useFusionStatus(sessionId, expandedTask, attentionOnly)
   if (!snapshot || snapshot.sessionId !== sessionId) return attentionOnly ? null : <p style={noteStyle} role="status">{tr(lang, '正在读取 Fusion 状态…', 'Loading Fusion status…')}</p>
-  if (snapshot.failed) return attentionOnly ? null : <p style={noteStyle} role="status">{tr(lang, 'Fusion 状态暂时无法更新，恢复连接后会重试。可用 /fusion status 查看。', 'Fusion status cannot update right now; it retries when reconnected. Use /fusion status.')}</p>
+  if (snapshot.failed) return attentionOnly ? null : <p style={noteStyle} role="status">{tr(lang, 'Fusion 状态暂时无法更新，恢复连接后会重试。可用 /fusion-next status 查看。', 'Fusion status cannot update right now; it retries when reconnected. Use /fusion-next status.')}</p>
   const task = snapshot.status?.task
   if (!snapshot.status?.selected || !task) return null
   if (attentionOnly && !task.attention) return null

@@ -13,7 +13,7 @@ const cleanup: (() => void)[] = []
 afterEach(() => cleanup.splice(0).reverse().forEach(fn => fn()))
 
 function fixture() {
-  const root = mkdtempSync(join(tmpdir(), 'fusion-parallel-'))
+  const root = mkdtempSync(join(tmpdir(), 'fusion-next-parallel-'))
   cleanup.push(() => rmSync(root, { recursive: true, force: true }))
   writeFileSync(join(root, 'a.ts'), 'export const a = 1\n')
   const store = new SqliteFusionStore(':memory:')
@@ -30,7 +30,7 @@ function fixture() {
     allowedPaths: [],
     acceptance: [],
   }
-  const parallelChild = SessionId('fusion-parallel-1')
+  const parallelChild = SessionId('fusion-next-parallel-1')
   const report = captureExploration(store, explore, snapshot, snapshot,
     { status: 'completed', summary: 'Found one file.', unresolved: [] },
     [{ path: 'a.ts', startLine: 1, endLine: 1 }])

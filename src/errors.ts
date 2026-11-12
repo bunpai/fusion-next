@@ -8,7 +8,7 @@ export class FusionError extends Error {
   }
 }
 
-export const FUSION_CONTEXT_BUDGET = 'FUSION_CONTEXT_BUDGET'
+export const FUSION_NEXT_CONTEXT_BUDGET = 'FUSION_NEXT_CONTEXT_BUDGET'
 export const REVISION_CONFLICT = 'REVISION_CONFLICT'
 export const REVISION_STALE = 'REVISION_STALE'
 export const EVENT_CONFLICT = 'EVENT_CONFLICT'

@@ -126,13 +126,13 @@ export class NativeRoleSandbox {
   /** A Lead shell is allowed only when the Host will actually run it read-only and without escalation. */
   leadShellProblem(exec: Readonly<ToolExecution>): string | undefined {
     const policy = this.#policy
-    if (!policy) return 'FUSION_LEAD_READ_ONLY: this Host exposes no sandbox policy, so the Lead cannot run shell commands. Delegate commands to the Sidekick.'
+    if (!policy) return 'FUSION_NEXT_LEAD_READ_ONLY: this Host exposes no sandbox policy, so the Lead cannot run shell commands. Delegate commands to the Sidekick.'
     const args = (exec.arguments ?? {}) as { sandbox_permissions?: unknown }
     if (args.sandbox_permissions !== undefined && args.sandbox_permissions !== null && args.sandbox_permissions !== '') {
-      return 'FUSION_LEAD_READ_ONLY: the Lead never escalates its sandbox. Delegate anything that needs to write or run with wider access to the Sidekick with fusion_delegate.'
+      return 'FUSION_NEXT_LEAD_READ_ONLY: the Lead never escalates its sandbox. Delegate anything that needs to write or run with wider access to the Sidekick with fusion_next_delegate.'
     }
     if (policy.resolve({ session: exec.agent!.session }).mode !== 'read-only') {
-      return 'FUSION_LEAD_READ_ONLY: the Lead shell is not currently confined to read-only; delegate this command to the Sidekick.'
+      return 'FUSION_NEXT_LEAD_READ_ONLY: the Lead shell is not currently confined to read-only; delegate this command to the Sidekick.'
     }
     return undefined
   }

@@ -1,11 +1,11 @@
 {
-  "name": "dsh-model-fusion",
-  "version": "0.2.11",
+  "name": "fusion-next",
+  "version": "0.1.0",
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"
   },
-  "description": "Fusion for DeepSeek Harness: one model entry backed by a frontier Lead that reads, briefs and reviews, and a much cheaper Sidekick that writes the code.",
+  "description": "Fusion Next for DeepSeek Harness: per-session planner/executor pair — a frontier Lead that reads, briefs and reviews, and a cheaper Sidekick that writes the code. Renamed from the dsh-model-fusion fork to a separate plugin identity.",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -36,8 +36,8 @@
   ],
   "exports": {
     ".": {
-      "types": "./lib/types/dsh-model-fusion.d.ts",
-      "import": "./lib/dsh-model-fusion.js"
+      "types": "./lib/types/fusion-next.d.ts",
+      "import": "./lib/fusion-next.js"
     },
     "./client": {
       "types": "./lib/types/client/index.d.ts",

@@ -11,7 +11,7 @@ import type {} from '@deepseek-ai/dsh-api-session-controller'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-commands'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
-import { FusionCatalogAdapter, FUSION_PROVIDER, FUSION_MODEL, installNativeFusionSelection, type FusionDispatch } from './host/native-selection.js'
+import { FusionCatalogAdapter, FUSION_NEXT_PROVIDER, FUSION_NEXT_MODEL, installNativeFusionSelection, type FusionDispatch } from './host/native-selection.js'
 import type { PhysicalRoute } from './contracts.js'
 import type { ResolvedProfile } from './profile/resolve.js'
 import { choiceFromProfile, modelProfileFromChoice, validatePairChoice, savedLeadRoute } from './host/settings.js'
@@ -39,7 +39,7 @@ import { readSessionPair, writeSessionPair, syncSessionPairLead } from './host/s
 
 export * from './index.js'
 
-export const name = 'dsh-model-fusion'
+export const name = 'fusion-next'
 export const inject = ['agents', 'sessions', 'llm', 'tools', 'subagents', 'systemPrompt', 'webServer', 'sessionController', 'sessionQuery', 'commands', 'agentDefaultModel', 'tokenMeter']
 export interface Config { profilePath?: string; authorizationPath?: string; databasePath?: string; workerTools?: string[]; lifecycleBridge?: boolean; hostSdkVersion?: string; fusionDatabasePath?: string; leadSandbox?: boolean; workerPolicy?: 'inherit' | 'restricted' }
 const defaultWorkerTools = [nativeShellTool, 'read', 'write', 'edit', 'glob', 'grep', 'job_output', 'job_kill']
@@ -132,7 +132,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
       // Physical truth wins: coordinator.pause() is unconditional user intent,
       // so journal the suspend even when the service policy reports blockers —
       // the run IS suspended on the Host. Blockers stay visible in the log.
-      console.warn(`[dsh-model-fusion] suspend journaled despite blockers for ${sessionId}: ${outcome.blockers.join(', ')}`)
+      console.warn(`[fusion-next] suspend journaled despite blockers for ${sessionId}: ${outcome.blockers.join(', ')}`)
       const manager = lifecycleManager!
       const alias = manager.getAlias(SessionId(sessionId) as never)
       const run = alias ? manager.getRun(alias.runId) : undefined
@@ -151,7 +151,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   let defaultProfile: ResolvedProfile | undefined
   const physicalCatalog = async () => {
     const catalog = await ctx.sessionController.modelCatalog()
-    return { ...catalog, groups: catalog.groups.filter(group => group.id !== FUSION_PROVIDER) }
+    return { ...catalog, groups: catalog.groups.filter(group => group.id !== FUSION_NEXT_PROVIDER) }
   }
   const configuredProfile = async (): Promise<ResolvedProfile> => {
     defaultProfile = undefined
@@ -214,7 +214,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
               if (String(assignment.runId) === runId) continue
               for (const claim of assignment.claimedPaths) {
                 const covered = claim === path || (claim.endsWith('/') ? path.startsWith(claim) : path.startsWith(`${claim}/`))
-                if (covered) return `FUSION_FILE_CONFLICT: ${path} is claimed by assignment ${assignment.assignmentId} on a sibling branch (${assignment.runId}); coordinate through the Lead instead of writing there`
+                if (covered) return `FUSION_NEXT_FILE_CONFLICT: ${path} is claimed by assignment ${assignment.assignmentId} on a sibling branch (${assignment.runId}); coordinate through the Lead instead of writing there`
               }
             }
           } catch { /* a claim-lookup failure must not silently widen writes */ }
@@ -259,7 +259,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     }
   }
   // Virtual provider dispatch: the session/agent model state stays on
-  // dsh-model-fusion/auto while every stream is delegated to the configured
+  // fusion-next/auto while every stream is delegated to the configured
   // Lead's physical adapter. The token meter observes both the fusion call and
   // the physical call (accounting duplicate until the dedicated Fusion LLM
   // layer replaces this delegation).
@@ -269,7 +269,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     model: route.model,
     ...(route.reasoningEffort === undefined ? {} : { reasoningEffort: ReasoningEffortId(route.reasoningEffort) }),
   })
-  ctx.effect(() => ctx.llm.registerAdapter([FUSION_PROVIDER], new FusionCatalogAdapter(leadInputModalities, fusionDispatch, () => defaultProfile?.profile.lead)))
+  ctx.effect(() => ctx.llm.registerAdapter([FUSION_NEXT_PROVIDER], new FusionCatalogAdapter(leadInputModalities, fusionDispatch, () => defaultProfile?.profile.lead)))
   ctx.effect(() => installNativeFusionSelection(ctx, {
     coordinator: () => runtime, profile: () => defaultProfile,
     // C01 activation seam: once a session commits to Fusion, the journal-backed
@@ -284,7 +284,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     selection: agent => {
       const selection = agent.session.snapshotEvents().findLast(event => event.type === 'model/selection')
       if (selection?.type === 'model/selection') return selection.data
-      if (bindings.read(agent.id)?.binding.selected) return { provider: FUSION_PROVIDER, model: FUSION_MODEL }
+      if (bindings.read(agent.id)?.binding.selected) return { provider: FUSION_NEXT_PROVIDER, model: FUSION_NEXT_MODEL }
       const header = agent.session.requestHeader()
       return header ? { provider: header.config.provider, model: header.config.model } : ctx.agentDefaultModel.currentSelection()
     },
@@ -298,7 +298,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     catch (error) { restoreFailure.set(payload.agent.id, String(error)); return { kind: 'reject' } }
     return next()
   }, { prepend: true }))
-  ctx.effect(() => ctx.webServer.register({ kind: 'exact', path: '/api/model-fusion', handler: async (req, res) => {
+  ctx.effect(() => ctx.webServer.register({ kind: 'exact', path: '/api/fusion-next', handler: async (req, res) => {
     if (!trustedRequest(req)) return json(res, 403, { error: 'forbidden' })
     try {
       const url = new URL(req.url ?? '/', 'http://localhost')
@@ -431,7 +431,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
         }
         const candidate = body.worker as { provider?: unknown; model?: unknown; reasoningEffort?: unknown } | undefined
         if (!candidate || typeof candidate.provider !== 'string' || !candidate.provider
-          || candidate.provider === FUSION_PROVIDER || typeof candidate.model !== 'string' || !candidate.model) {
+          || candidate.provider === FUSION_NEXT_PROVIDER || typeof candidate.model !== 'string' || !candidate.model) {
           throw new Error(bi('执行模型必须是一个真实模型', 'The executor must be a real model'))
         }
         const catalog = await physicalCatalog()
@@ -451,13 +451,13 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
       throw new Error(bi('请使用原模型菜单选择 Fusion 或切换普通模型', 'Use the model menu to select Fusion or another model'))
     } catch (error) { return json(res, 409, { error: error instanceof Error ? error.message : String(error) }) }
   } }))
-  ctx.effect(() => ctx.commands.register({ name: 'fusion', description: bi('Fusion 状态、暂停、恢复与退出（不调用模型）', 'Fusion status, pause, resume and exit (no model call)'),
+  ctx.effect(() => ctx.commands.register({ name: 'fusion-next', description: bi('Fusion 状态、暂停、恢复与退出（不调用模型）', 'Fusion status, pause, resume and exit (no model call)'),
     input: { hint: bi('status | pause | resume | recover [--effects-stopped] <检查记录> | off', 'status | pause | resume | recover [--effects-stopped] <inspection note> | off') },
     handler: async invocation => {
       const [action = 'status', ...note] = invocation.rawInput.trim().split(/\s+/)
       try {
         const binding = bindings.read(invocation.agent.id)?.binding
-        if (!binding?.selected) return { kind: 'success', text: bi('当前会话未启用 Fusion。请在模型选择器中选择 Fusion · 自动。', 'Fusion is not selected in this conversation. Choose Fusion · auto in the model menu.') }
+        if (!binding?.selected) return { kind: 'success', text: bi('当前会话未启用 Fusion。请在模型选择器中选择 Fusion Next · 自动。', 'Fusion is not selected in this conversation. Choose Fusion · auto in the model menu.') }
         if (action === 'status' || action === '') {
           const controller = await getRuntime({ profile: binding.profile, prompts: binding.prompts })
           const state = store.load(binding.taskId)!
@@ -483,7 +483,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
           await controller.clear(invocation.agent)
           await ctx.sessionController.selectModel({ sessionId: SessionId(invocation.agent.id), ...binding.profile.lead })
         }
-        else throw new Error(bi('使用 /fusion status、pause、resume、recover <检查记录> 或 off', 'Use /fusion status, pause, resume, recover <inspection note> or off'))
+        else throw new Error(bi('使用 /fusion-next status、pause、resume、recover <检查记录> 或 off', 'Use /fusion-next status, pause, resume, recover <inspection note> or off'))
         return { kind: 'success', text: action === 'resume' ? binding.profile.interactionMode === 'model-like' ? bi('已通过原生收件箱提交一次继续操作。', 'One continuation was submitted through the native inbox.') : bi('Fusion 已恢复。发送下一条消息继续当前任务。', 'Fusion resumed. Send a message to continue the task.') : bi(`Fusion ${action} 已完成。`, `Fusion ${action} done.`) }
       } catch (error) { return { kind: 'error', text: error instanceof Error ? error.message : String(error) } }
     } }))
@@ -494,5 +494,5 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     const selected = bindings.selected()[0]
     if (selected) await getRuntime({ profile: selected.profile, prompts: selected.prompts })
   }
-  ctx.logger.info('[my-plugins/dsh-model-fusion] loaded')
+  ctx.logger.info('[my-plugins/fusion-next] loaded')
 }

@@ -3,7 +3,7 @@ import type { GenerateOptions, UserMessage } from '@deepseek-ai/dsh-llm';
 import type { Role, TaskId } from '../contracts.js';
 import type { SqliteFusionStore } from '../task/sqlite-store.js';
 import type { SessionBinding } from './bindings.js';
-export declare const FUSION_TASK_CONTEXT = "fusion:task";
+export declare const FUSION_NEXT_TASK_CONTEXT = "fusion:task";
 export type ContextDetail = 'compact' | 'full';
 /** Programmatic facts travel as native user-role context, never as system instructions. */
 export declare class NativeTaskContext {

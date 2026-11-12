@@ -55,7 +55,7 @@ export class V2Shadow {
       // Shadow writes must never break the live task. Warn once per event type.
       if (!this.warned.has(type)) {
         this.warned.add(type)
-        console.warn(`[dsh-model-fusion] v2 shadow projection failed for ${type}: ${String(error)}`)
+        console.warn(`[fusion-next] v2 shadow projection failed for ${type}: ${String(error)}`)
       }
     }
   }

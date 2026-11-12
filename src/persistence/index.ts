@@ -2,11 +2,11 @@ import { createHash, randomUUID } from 'node:crypto'
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, statSync, unlinkSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { FUSION_V2_SQL } from './schema.js'
+import { FUSION_NEXT_V2_SQL } from './schema.js'
 import { verifyV2Schema } from './verify.js'
 export { restoreFusionV1FromBackup } from './restore.js'
 
-export { FUSION_V2_TABLES } from './schema.js'
+export { FUSION_NEXT_V2_TABLES } from './schema.js'
 export interface FusionMigrationResult { readonly migrated: boolean; readonly version: 2; readonly backup?: { readonly path: string; readonly sha256: string } }
 export interface FusionMigrationOptions { /** Failure injection for transactional verification; invoked before COMMIT. */ readonly beforeCommit?: () => void }
 
@@ -111,7 +111,7 @@ export function migrateFusionV2(filename: string, options: FusionMigrationOption
       }
       if (version === 0) legacySchema(db)
       verify(db)
-      db.exec(FUSION_V2_SQL)
+      db.exec(FUSION_NEXT_V2_SQL)
       db.exec('PRAGMA user_version = 2')
       options.beforeCommit?.()
       verify(db)

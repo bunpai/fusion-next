@@ -12,7 +12,7 @@ const bundlerPath = require.resolve('tsdown');
 const { build } = await import(pathToFileURL(bundlerPath).href);
 
 await build({
-  entry: { 'dsh-model-fusion': 'src/dsh-model-fusion.ts' },
+  entry: { 'fusion-next': 'src/fusion-next.ts' },
   outDir: 'lib',
   outExtensions: () => ({ js: '.js', dts: '.d.ts' }),
   clean: false,

@@ -20,6 +20,6 @@ const supportedHost = profile.version === '0.2.0-rc.2'
 if (!supportedHost) throw new Error(`Unsupported Host package version ${profile.version}; Fusion builds against 0.2.0-rc.2, any 0.2.1-rc.*, and 0.2.x`)
 execFileSync(process.execPath, [resolve(root, 'node_modules/typescript/bin/tsc'), '-p', 'tsconfig.build.json'], { cwd: root, stdio: 'inherit' })
 mkdirSync(resolve(root, 'lib'), { recursive: true })
-for (const config of externalClientBundle('dsh-model-fusion', ['src/dsh-model-fusion.ts'], { packageRoot: root, clientEntry: 'src/client/index.ts' })) {
+for (const config of externalClientBundle('fusion-next', ['src/fusion-next.ts'], { packageRoot: root, clientEntry: 'src/client/index.ts' })) {
   await build({ ...config, config: false, cwd: root })
 }

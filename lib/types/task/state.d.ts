@@ -18,6 +18,13 @@ export interface TaskState {
     readonly acceptedMessageId?: string;
     readonly currentWorkOrder?: WorkOrder;
     readonly exploration?: ExplorationReport;
+    /** Bounded parallelism: one read-only explore order may run alongside the
+     * current (implement/text) order. Read-only means no write-lease, no
+     * effect and no allowedPaths conflict with the primary order. */
+    readonly parallelOrder?: WorkOrder;
+    readonly parallelChild?: SessionId;
+    readonly parallelAccepted?: boolean;
+    readonly parallelExploration?: ExplorationReport;
     readonly candidateReport?: WorkerReport;
     readonly validatedReport?: WorkerReport;
     readonly validatedReceipt?: ReviewReadinessReceipt;

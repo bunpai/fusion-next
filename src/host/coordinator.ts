@@ -60,11 +60,11 @@ import { readNativeEvidence } from './native-evidence.js'
 const textOutput = { schema: { type: 'string' as const }, render: (_args: unknown, text: string) => [{ type: 'text' as const, text }] }
 const stringList = { type: 'array' as const, items: { type: 'string' as const }, required: true as const }
 const optionalStringList = { type: 'array' as const, items: { type: 'string' as const } }
-const READ_TOOLS = new Set(['fusion_read_state', 'glob', 'grep', 'read', 'fusion_read_evidence', 'fusion_list_evidence', 'job_output'])
+const READ_TOOLS = new Set(['fusion_next_read_state', 'glob', 'grep', 'read', 'fusion_next_read_evidence', 'fusion_next_list_evidence', 'job_output'])
 const isRead = (exec: Readonly<ToolExecution>) => READ_TOOLS.has(exec.name)
   || exec.name === 'str_replace_editor' && (exec.arguments as { command?: unknown }).command === 'view'
-const FUSION_TOOLS = new Set(['fusion_read_state', 'fusion_delegate_text', 'fusion_explore', 'fusion_delegate', 'fusion_rework', 'fusion_wait', 'fusion_review_result', 'fusion_submit_result', 'fusion_takeover', 'fusion_finish_direct', 'fusion_read_evidence', 'fusion_list_evidence'])
-const WORKER_FUSION_TOOLS = new Set(['fusion_submit_result', 'fusion_read_state', 'fusion_read_evidence', 'fusion_list_evidence'])
+const FUSION_NEXT_TOOLS = new Set(['fusion_next_read_state', 'fusion_next_delegate_text', 'fusion_next_explore', 'fusion_next_delegate', 'fusion_next_rework', 'fusion_next_wait', 'fusion_next_review_result', 'fusion_next_submit_result', 'fusion_next_takeover', 'fusion_next_finish_direct', 'fusion_next_read_evidence', 'fusion_next_list_evidence'])
+const WORKER_FUSION_TOOLS = new Set(['fusion_next_submit_result', 'fusion_next_read_state', 'fusion_next_read_evidence', 'fusion_next_list_evidence'])
 export interface CoordinatorOptions {
   profile: ResolvedProfile
   workerTools: readonly string[]
@@ -296,8 +296,8 @@ export function directTurnLeavesWorkOpen(userTexts: readonly string[], assistant
 export const literalSpans = (text: string) => [...new Set([...text.matchAll(/`([^`\n]{2,120})`/g)].map(match => match[1]!))]
 
 /** The enforced-v3 Lead's fixed catalog (order is part of the cached prompt prefix). */
-const SEPARATED_LEAD_TOOLS: readonly string[] = [...new Set([...READ_TOOLS, nativeShellTool, ...[...FUSION_TOOLS].filter(name =>
-  !['fusion_takeover', 'fusion_submit_result', 'fusion_finish_direct'].includes(name))])]
+const SEPARATED_LEAD_TOOLS: readonly string[] = [...new Set([...READ_TOOLS, nativeShellTool, ...[...FUSION_NEXT_TOOLS].filter(name =>
+  !['fusion_next_takeover', 'fusion_next_submit_result', 'fusion_next_finish_direct'].includes(name))])]
 
 /** Test files by common conventions (Python, JS/TS, Go, Rust and generic test directories). */
 const TEST_FILE = /(^|\/)(tests?|__tests__|specs?)\/|(^|\/)test_[^/]+\.py$|_test\.(py|go)$|\.(test|spec)\.[cm]?[jt]sx?$|(^|\/)conftest\.py$/i
@@ -444,24 +444,24 @@ export class FusionCoordinator {
           if (adaptiveWorkflow(binding) && !state.currentWorkOrder) return undefined
           const takeover = state.currentWorkOrder && this.#runtime(binding.taskId).takeover
           if (takeover && lease?.holder === SessionId(agent.id) && this.leases.stillHeld(lease)) return undefined
-          return [...READ_TOOLS, ...FUSION_TOOLS].filter(name => {
+          return [...READ_TOOLS, ...FUSION_NEXT_TOOLS].filter(name => {
             if (adaptiveWorkflow(binding) && state.currentWorkOrder) {
               // Do not offer new handoffs while this persistent Worker owns the
               // task. The delegate method remains the hard guard for forged calls.
-              if (name === 'fusion_delegate_text' || name === 'fusion_explore') return false
-              if (name === 'fusion_delegate' || name === 'fusion_finish_direct') return state.currentWorkOrder.mode === 'explore'
+              if (name === 'fusion_next_delegate_text' || name === 'fusion_next_explore') return false
+              if (name === 'fusion_next_delegate' || name === 'fusion_next_finish_direct') return state.currentWorkOrder.mode === 'explore'
                 && state.phase === 'PLANNING' && state.exploration?.status === 'completed'
-              if (name === 'fusion_review_result') return state.phase === 'REVIEWING'
-              if (name === 'fusion_wait') return state.phase === 'WORKER_RUNNING'
+              if (name === 'fusion_next_review_result') return state.phase === 'REVIEWING'
+              if (name === 'fusion_next_wait') return state.phase === 'WORKER_RUNNING'
             }
-            return name !== 'fusion_submit_result'
-            && (name !== 'fusion_takeover' || state.currentWorkOrder?.mode !== 'text'
+            return name !== 'fusion_next_submit_result'
+            && (name !== 'fusion_next_takeover' || state.currentWorkOrder?.mode !== 'text'
               && state.currentWorkOrder?.mode !== 'explore' && state.reviewResult?.decision === 'rework')
           })
         }
         if (binding.profile.interactionMode === 'model-like' && !state.currentWorkOrder) return undefined
         return state.control.mode === 'running' && lease?.holder === SessionId(agent.id) && this.leases.stillHeld(lease)
-          ? undefined : [...READ_TOOLS, ...FUSION_TOOLS]
+          ? undefined : [...READ_TOOLS, ...FUSION_NEXT_TOOLS]
       },
     })
     this.approvals = new NativeApprovals(ctx, store, { owner: agent => this.owner(agent),
@@ -472,13 +472,13 @@ export class FusionCoordinator {
     this.#dispose.push(this.approvals.install())
     this.#dispose.push(this.roleSandbox.install())
     this.effects = new NativeEffects(ctx, store, { owner: agent => this.owner(agent),
-      track: exec => !isRead(exec) && !FUSION_TOOLS.has(exec.name),
+      track: exec => !isRead(exec) && !FUSION_NEXT_TOOLS.has(exec.name),
       backgroundMaxMs: (_exec, binding) => binding.profile.interactionMode === 'model-like' ? null : (this.state(binding.taskId).currentWorkOrder?.policy.commandMaxSeconds ?? this.options.commandMaxSeconds ?? DEFAULT_POLICY.commandMaxSeconds) * 1000,
       failed: (agent, error) => this.#trackingFailed(agent, `Fusion native effect tracking failed: ${String(error)}`) })
     this.#dispose.push(this.effects.install())
     this.#dispose.push(ctx.on('tools/execute', async (exec, next) => {
       const owner = exec.agent && this.owner(exec.agent)
-      if (owner?.role !== 'lead' || !FUSION_TOOLS.has(exec.name) || isRead(exec)) return next()
+      if (owner?.role !== 'lead' || !FUSION_NEXT_TOOLS.has(exec.name) || isRead(exec)) return next()
       const taskId = owner.binding.taskId
       if (this.#leadMutations.has(taskId)) throw new Error('Another Fusion control call is active; issue delegation, steering, wait and takeover sequentially')
       this.#leadMutations.set(taskId, exec.token)
@@ -498,7 +498,7 @@ export class FusionCoordinator {
       const cwd = exec.agent.session.header.cwd
       return workspaceWriterDenial({
         fusionOwned: true,
-        exempt: isRead(exec) || FUSION_TOOLS.has(exec.name) || exec.name === 'run_code',
+        exempt: isRead(exec) || FUSION_NEXT_TOOLS.has(exec.name) || exec.name === 'run_code',
         cwd,
         leaseHolder: cwd ? this.leases.current(cwd)?.holder : undefined,
         agentId: SessionId(exec.agent.id),
@@ -575,13 +575,13 @@ export class FusionCoordinator {
       if (!owner || !enforcedWorkflow(owner.binding) || signal.aborted || this.#accessBlocked(agent, owner.binding, owner.role)) return
       const { binding, role } = owner, state = this.state(binding.taskId)
       let instruction: string | undefined
-      if (role === 'lead' && state.phase === 'REVIEWING') instruction = 'The current report has not been accepted. Inspect its evidence and call fusion_review_result; failed checks cannot be accepted. Use needs-decision for a genuine missing user decision.'
-      else if (role === 'lead' && adaptiveWorkflow(binding) && state.phase === 'REWORK') instruction = 'Your review requires a correction. Send the specific feedback to the same Sidekick through fusion_rework; do not end the task before the correction and its checks. If a real user decision is missing, explain it explicitly.'
+      if (role === 'lead' && state.phase === 'REVIEWING') instruction = 'The current report has not been accepted. Inspect its evidence and call fusion_next_review_result; failed checks cannot be accepted. Use needs-decision for a genuine missing user decision.'
+      else if (role === 'lead' && adaptiveWorkflow(binding) && state.phase === 'REWORK') instruction = 'Your review requires a correction. Send the specific feedback to the same Sidekick through fusion_next_rework; do not end the task before the correction and its checks. If a real user decision is missing, explain it explicitly.'
       else if (role === 'worker' && (state.parallelChild === SessionId(agent.id) ? state.parallelOrder : state.currentWorkOrder)
         && !(state.parallelChild === SessionId(agent.id) ? this.#runtime(binding.taskId).parallelSubmitted : this.#runtime(binding.taskId).submitted)) {
-        instruction = 'Submit the current work through fusion_submit_result with its actual status and unresolved requirements. Prose alone cannot complete this work order.'
+        instruction = 'Submit the current work through fusion_next_submit_result with its actual status and unresolved requirements. Prose alone cannot complete this work order.'
       }
-      else if (role === 'lead' && !state.currentWorkOrder && this.workflow.deniedEffect(binding)) instruction = 'A requested effect was blocked and has not executed. Delegate it through fusion_delegate, or explain the blocker. This task cannot be recorded as completed by a text-only response.'
+      else if (role === 'lead' && !state.currentWorkOrder && this.workflow.deniedEffect(binding)) instruction = 'A requested effect was blocked and has not executed. Delegate it through fusion_next_delegate, or explain the blocker. This task cannot be recorded as completed by a text-only response.'
       if (!instruction) return
       if (!this.workflow.repairStop(agent, binding, role, instruction)) this.modelControl.failure(binding, role, {
         code: 'WORKFLOW_INCOMPLETE', message: 'The required workflow transition is still missing after one repair opportunity',
@@ -902,7 +902,7 @@ export class FusionCoordinator {
     const spent = this.#workerStepLimit(taskId, limit)
     if (!spent) return
     this.#recordWorkerStepStop(taskId, spent)
-    throw new Error(`Worker step limit reached (${spent.requests}/${spent.limit}); no feedback or new work order was sent. Existing reports and counters are retained. Do not retry Worker feedback; collect any still-settling response with fusion_wait, explain unfinished work, and await a user decision.`)
+    throw new Error(`Worker step limit reached (${spent.requests}/${spent.limit}); no feedback or new work order was sent. Existing reports and counters are retained. Do not retry Worker feedback; collect any still-settling response with fusion_next_wait, explain unfinished work, and await a user decision.`)
   }
 
   #toolBlocked(exec: Readonly<ToolExecution>, binding: SessionBinding, role: Role): string | undefined {
@@ -920,11 +920,11 @@ export class FusionCoordinator {
       if (issue) return issue
     }
     if (state.control.mode === 'completed') return 'This task is completed; begin a new task before using tools'
-    if (role === 'lead' && ['fusion_delegate', 'fusion_delegate_text', 'fusion_explore', 'fusion_rework', 'fusion_takeover'].includes(exec.name) && this.modelControl.waiting(binding, 'worker')
+    if (role === 'lead' && ['fusion_next_delegate', 'fusion_next_delegate_text', 'fusion_next_explore', 'fusion_next_rework', 'fusion_next_takeover'].includes(exec.name) && this.modelControl.waiting(binding, 'worker')
       // A Worker that stopped without its report, looped, or hit an unclassified error can be redirected by the
       // Lead with a new instruction (bounded); quota and credential stops still need the user.
-      && !(exec.name === 'fusion_takeover' && this.#escalation(binding))
-      && !(exec.name !== 'fusion_takeover' && this.modelControl.leadRecover(binding, 'worker'))) {
+      && !(exec.name === 'fusion_next_takeover' && this.#escalation(binding))
+      && !(exec.name !== 'fusion_next_takeover' && this.modelControl.leadRecover(binding, 'worker'))) {
       return 'Sidekick is unavailable; preserve its task and use the local Fusion controls to continue or replace its model. Do not retry delegation or take over automatically.'
     }
     if (role === 'worker' && !isRead(exec)) {
@@ -936,8 +936,8 @@ export class FusionCoordinator {
     const workerOrder = role === 'worker' && state.parallelChild === SessionId(exec.agent.id) ? state.parallelOrder : state.currentWorkOrder
     if (role === 'worker' && workerOrder?.mode === 'text' && !WORKER_FUSION_TOOLS.has(exec.name)) return 'Text delegation has no external tools; prepare the result from the supplied material'
     if (role === 'worker' && workerOrder?.mode === 'explore'
-      && !isRead(exec) && exec.name !== 'fusion_submit_result') {
-      return 'Exploration is read-only: use file search/read tools and fusion_submit_result with 1–12 source ranges (omit them only when the directory has no entries on disk and you state that the scope is empty); no shell, edits or run_code'
+      && !isRead(exec) && exec.name !== 'fusion_next_submit_result') {
+      return 'Exploration is read-only: use file search/read tools and fusion_next_submit_result with 1–12 source ranges (omit them only when the directory has no entries on disk and you state that the scope is empty); no shell, edits or run_code'
     }
     // The Sidekick's ceiling also holds at execution — only when workerPolicy is 'restricted'
     // (inherit policy: the Worker uses the same toolset as any other agent, matching the Host's
@@ -954,14 +954,14 @@ export class FusionCoordinator {
       const separated = this.#separatedLeadGuard(exec, binding)
       if (separated !== false) return separated
     }
-    if (enforcedWorkflow(binding) && role === 'lead' && !isRead(exec) && !FUSION_TOOLS.has(exec.name)
+    if (enforcedWorkflow(binding) && role === 'lead' && !isRead(exec) && !FUSION_NEXT_TOOLS.has(exec.name)
       && (!adaptiveWorkflow(binding) || state.currentWorkOrder)) {
       const nested = this.#nestedChecks.get(exec.callId)
       const check = isShellTool(exec.name) && nested?.agent === exec.agent && (exec.parent === undefined || nested.parent === exec.parent)
       const takeover = state.currentWorkOrder && this.#runtime(binding.taskId).takeover
       if (!check && !takeover) return this.workflow.denyEffect(binding)
     }
-    if (isRead(exec) || FUSION_TOOLS.has(exec.name) || exec.name === 'run_code') return undefined
+    if (isRead(exec) || FUSION_NEXT_TOOLS.has(exec.name) || exec.name === 'run_code') return undefined
     if (binding.profile.interactionMode === 'model-like' && !enforcedWorkflow(binding) && role === 'lead') {
       const refused = this.#leadWriteBoundary(exec, binding)
       if (refused) return refused
@@ -1023,7 +1023,7 @@ export class FusionCoordinator {
     const spent = (prior?.value as { lines?: number } | undefined)?.lines ?? 0
     if (lines > LEAD_DIRECT_WRITE.perCall || spent + lines > LEAD_DIRECT_WRITE.perTask) {
       return `Direct Lead writing is for small edits (this call ${lines} lines; this task ${spent}/${LEAD_DIRECT_WRITE.perTask} lines, at most ${LEAD_DIRECT_WRITE.perCall} per call). `
-        + 'You are the more expensive model: delegate this implementation to the Sidekick with fusion_delegate (goal, constraints, allowedPaths, checks), then review its result. '
+        + 'You are the more expensive model: delegate this implementation to the Sidekick with fusion_next_delegate (goal, constraints, allowedPaths, checks), then review its result. '
         + 'If the user explicitly requires you to write it yourself, explain that Fusion hands larger writing to its Sidekick and that a single model can be selected instead.'
     }
     this.store.writeDocument(key, prior?.revision ?? 0, { schemaVersion: 1, taskId: binding.taskId, lines: spent + lines })
@@ -1038,13 +1038,13 @@ export class FusionCoordinator {
   #readStreak(exec: Readonly<ToolExecution>, role: Role): string | undefined {
     const id = exec.agent!.id, limit = READ_STREAK[role]
     // Recovery paging and waiting on a job are required steps, not browsing: neither counts nor resets.
-    if (exec.name === 'fusion_read_state' || exec.name === 'job_output') return undefined
+    if (exec.name === 'fusion_next_read_state' || exec.name === 'job_output') return undefined
     if (!isRead(exec)) { this.#reads.delete(id); return undefined }
     const count = (this.#reads.get(id) ?? 0) + 1
     this.#reads.set(id, count)
     if (count <= limit) return undefined
     return `${count - 1} consecutive read-only calls without any other action. Stop reading and act on what you already know: `
-      + (role === 'lead' ? 'answer, delegate or record fusion_review_result with the evidence you have. Broad reading belongs to the Sidekick.'
+      + (role === 'lead' ? 'answer, delegate or record fusion_next_review_result with the evidence you have. Broad reading belongs to the Sidekick.'
         : 'implement, run the check, or submit your report with what remains unresolved.')
   }
 
@@ -1059,36 +1059,36 @@ export class FusionCoordinator {
     // reset the frontier model's prompt cache at every handoff and review (round 4: 12 changes in one task,
     // Lead cache hit 69% against 94% alone). Phase rules stay enforced where they belong: in each tool and
     // the guard, whose refusals say what to do instead. Takeover appears only once the Host unlocks it.
-    return this.#escalation(binding) ? [...SEPARATED_LEAD_TOOLS, 'fusion_takeover'] : SEPARATED_LEAD_TOOLS
+    return this.#escalation(binding) ? [...SEPARATED_LEAD_TOOLS, 'fusion_next_takeover'] : SEPARATED_LEAD_TOOLS
   }
 
   /** undefined = allow now, string = refuse, false = not decided here (continue the ordinary guard). */
   #separatedLeadGuard(exec: Readonly<ToolExecution>, binding: SessionBinding): string | undefined | false {
     // A Host-unlocked takeover holding the lease is an ordinary single writer: lease, allowedPaths and checks apply.
-    if (this.#leadWriter(binding, exec.agent!)) return exec.name === 'fusion_finish_direct' ? 'Submit the correction with fusion_submit_result; the frozen checks decide' : false
-    if (exec.name === 'fusion_takeover' && this.#escalation(binding)) return false
-    if (exec.name === 'fusion_takeover') {
-      return `FUSION_LEAD_READ_ONLY: takeover unlocks only when the Host sees the Sidekick cannot finish: ${ESCALATE_AFTER_REWORKS} rework rounds with checks still failing (after you record a rework review), its step limit, or repeated stalls. Until then send corrections with fusion_rework.`
+    if (this.#leadWriter(binding, exec.agent!)) return exec.name === 'fusion_next_finish_direct' ? 'Submit the correction with fusion_next_submit_result; the frozen checks decide' : false
+    if (exec.name === 'fusion_next_takeover' && this.#escalation(binding)) return false
+    if (exec.name === 'fusion_next_takeover') {
+      return `FUSION_NEXT_LEAD_READ_ONLY: takeover unlocks only when the Host sees the Sidekick cannot finish: ${ESCALATE_AFTER_REWORKS} rework rounds with checks still failing (after you record a rework review), its step limit, or repeated stalls. Until then send corrections with fusion_next_rework.`
     }
-    if (exec.name === 'fusion_submit_result' || exec.name === 'fusion_finish_direct') {
-      return 'FUSION_LEAD_READ_ONLY: in this Fusion mode the Lead never writes. Send corrections to the same Sidekick with fusion_rework.'
+    if (exec.name === 'fusion_next_submit_result' || exec.name === 'fusion_next_finish_direct') {
+      return 'FUSION_NEXT_LEAD_READ_ONLY: in this Fusion mode the Lead never writes. Send corrections to the same Sidekick with fusion_next_rework.'
     }
     // run_code wraps every tool on hosts that publish the code-mode entry point; the nested calls it makes
     // re-enter this gate individually (nested shell still hits leadShellProblem), so denying the outer call
-    // would dead-lock a sandboxed Lead that cannot even reach fusion_delegate.
-    if (isRead(exec) || FUSION_TOOLS.has(exec.name) || exec.name === 'run_code') return false
+    // would dead-lock a sandboxed Lead that cannot even reach fusion_next_delegate.
+    if (isRead(exec) || FUSION_NEXT_TOOLS.has(exec.name) || exec.name === 'run_code') return false
     const nested = this.#nestedChecks.get(exec.callId)
     if (isShellTool(exec.name) && nested && nested.agent === exec.agent && (exec.parent === undefined || nested.parent === exec.parent)) return false
     if (isShellTool(exec.name) && (exec.arguments as { run_in_background?: unknown }).run_in_background === true) {
       this.workflow.denyEffect(binding)
-      return 'FUSION_LEAD_READ_ONLY: the Lead runs only short foreground inspection commands. Test runs and long commands belong to the Sidekick: delegate them.'
+      return 'FUSION_NEXT_LEAD_READ_ONLY: the Lead runs only short foreground inspection commands. Test runs and long commands belong to the Sidekick: delegate them.'
     }
     const shell = isShellTool(exec.name) ? this.roleSandbox.leadShellProblem(exec) : undefined
     if (isShellTool(exec.name) && !shell) return undefined
     // Record the refusal so a text-only answer cannot mark undelegated work complete.
     this.workflow.denyEffect(binding)
     if (shell) return shell
-    return 'FUSION_LEAD_READ_ONLY: in this Fusion mode the Lead only reads and runs read-only commands. Every workspace change, file write or code execution goes to the Sidekick: use fusion_delegate (or fusion_delegate_text for writing without a workspace).'
+    return 'FUSION_NEXT_LEAD_READ_ONLY: in this Fusion mode the Lead only reads and runs read-only commands. Every workspace change, file write or code execution goes to the Sidekick: use fusion_next_delegate (or fusion_next_delegate_text for writing without a workspace).'
   }
 
   /**
@@ -1198,8 +1198,8 @@ export class FusionCoordinator {
       briefRevision: this.#runtime(binding.taskId).briefRevision ?? 0, delivery,
       mode: state.currentWorkOrder?.mode ?? 'implement',
       next: state.currentWorkOrder?.mode === 'explore'
-        ? 'The Worker is exploring read-only with no write lease. Continue read-only analysis, use fusion_rework for more facts, or fusion_wait to collect the source findings before planning implementation.'
-        : 'The Worker retains write ownership. Continue read-only work, use fusion_rework to steer the same Worker, or call fusion_wait for its report and native checks.' })
+        ? 'The Worker is exploring read-only with no write lease. Continue read-only analysis, use fusion_next_rework for more facts, or fusion_next_wait to collect the source findings before planning implementation.'
+        : 'The Worker retains write ownership. Continue read-only work, use fusion_next_rework to steer the same Worker, or call fusion_next_wait for its report and native checks.' })
   }
 
   /** A disposed Worker is a terminal persisted state, not an unknown side effect, when nothing is still running. */
@@ -1238,7 +1238,7 @@ export class FusionCoordinator {
       if (this.effects.pending(binding.taskId).length) throw new Error('Worker stopped with unfinished native effects; inspection is required')
       exec.signal.throwIfAborted()
     } catch (error) {
-      const cause = exec.signal.aborted ? new Error('FUSION_INTERRUPTED: the native turn was cancelled; progress is retained. Continue the existing task after its effects settle.') : error
+      const cause = exec.signal.aborted ? new Error('FUSION_NEXT_INTERRUPTED: the native turn was cancelled; progress is retained. Continue the existing task after its effects settle.') : error
       const gone = this.ctx.agents.get(NativeSessionId(childId))
       if (!exec.signal.aborted && (!gone || gone.session.header.parentSession !== agent.id)) {
         return this.#collectAbsentWorker(agent, binding, exec)
@@ -1295,7 +1295,7 @@ export class FusionCoordinator {
       const found = [...probe.alternatives[name]!.map(item => `${item} on PATH`), ...probe.locations[name]!.map(path => `installed at ${path}, not on PATH`)]
       return found.length ? `${name} (${found.join('; ')})` : name
     })
-    throw new Error(`Acceptance commands use programs this host's check shell cannot find: ${hints.join('; ')}. Checks and the Worker run in the same non-interactive shell with the Host's PATH (a desktop app started from the Dock gets only the system PATH). Retry fusion_delegate with commands that exist here, using the absolute path shown when one is installed off PATH, and tell the Worker to use the same path.`)
+    throw new Error(`Acceptance commands use programs this host's check shell cannot find: ${hints.join('; ')}. Checks and the Worker run in the same non-interactive shell with the Host's PATH (a desktop app started from the Dock gets only the system PATH). Retry fusion_next_delegate with commands that exist here, using the absolute path shown when one is installed off PATH, and tell the Worker to use the same path.`)
   }
 
   async delegate(agent: Agent, args: DelegateInput, exec: ToolRunContext, mode: 'explore' | 'implement' | 'text' = 'implement'): Promise<string> {
@@ -1316,7 +1316,7 @@ export class FusionCoordinator {
     // and no allowedPaths, so it cannot conflict with the primary worker.
     const parallelLane = mode === 'explore' && priorState.currentWorkOrder !== undefined
       && priorState.currentWorkOrder.mode !== 'explore' && priorState.parallelOrder === undefined
-    if (priorState.currentWorkOrder && !promoting && !parallelLane) throw new Error('A Worker already owns this task; use fusion_rework with model-authored feedback (after a report it can also add allowedPaths with addAllowedPaths, or correct checks)')
+    if (priorState.currentWorkOrder && !promoting && !parallelLane) throw new Error('A Worker already owns this task; use fusion_next_rework with model-authored feedback (after a report it can also add allowedPaths with addAllowedPaths, or correct checks)')
     const base: WorkspaceSnapshot = mode === 'text'
       ? { schemaVersion: 1, root: `text:${binding.sessionId}`, entries: [], excludedDirectoryNames: [], id: SnapshotId(`text:${binding.taskId}`) }
       : snapshotWorkspace(agent.session.header.cwd!)
@@ -1364,7 +1364,7 @@ export class FusionCoordinator {
     order.acceptance = checks.map(check => ({ id: check.definition.id, description: check.definition.description,
       mandatory: true, verificationKind: check.plan.kind, planId: check.plan.id, planDigest: digestOf(check.plan) }))
     this.#assertWorkerCapacity(binding.taskId, order.policy.maxWorkerSteps)
-    const childId = SessionId(parallelLane ? `fusion-parallel-${randomUUID()}` : (binding.workerId ?? `fusion-worker-${randomUUID()}`))
+    const childId = SessionId(parallelLane ? `fusion-next-parallel-${randomUUID()}` : (binding.workerId ?? `fusion-next-worker-${randomUUID()}`))
     const priorChild = this.store.readDocument(`child:${childId}`)
     const resident = this.ctx.agents.get(NativeSessionId(childId))
     if (binding.workerId && !parallelLane) {
@@ -1405,7 +1405,7 @@ export class FusionCoordinator {
       .map(check => `${check.definition.id}: ${JSON.stringify(check.plan.allowedFailures)}`)
     const knownText = known.length ? `\n\nPre-existing failures the Host observed on the untouched workspace before you started (not part of this task; these checks pass while only these fail, so do not change unrelated code to fix them):\n${known.join('\n')}` : ''
     const brief = `${request}${hard}Current stage brief (Lead-authored; later feedback may advance or replace this stage without changing the frozen work order):\n${args.brief}\n\nFrozen work order (goal and constraints apply throughout this work order, across all implementation stages):\n${JSON.stringify(shownOrder)}\n\n${mode === 'explore'
-      ? 'Read-only exploration: return findings through fusion_submit_result. A completed report cites 1–12 file ranges. Omit ranges only when the directory has no entries on disk and the summary states that the scope is empty; the host accepts that only when its own listing is also empty. Hidden, gitignored and excluded entries still count. A search that matches nothing in a workspace that still has files does not qualify. Do not implement, run commands, or claim task completion.'
+      ? 'Read-only exploration: return findings through fusion_next_submit_result. A completed report cites 1–12 file ranges. Omit ranges only when the directory has no entries on disk and the summary states that the scope is empty; the host accepts that only when its own listing is also empty. Hidden, gitignored and excluded entries still count. A search that matches nothing in a workspace that still has files does not qualify. Do not implement, run commands, or claim task completion.'
       : `Acceptance commands:\n${JSON.stringify(args.checks)}${knownText}`}`
     const payload = this.store.putArtifact(binding.taskId, Buffer.from(brief), 'text/plain')
     const prepared = this.state(binding.taskId)
@@ -1458,7 +1458,7 @@ export class FusionCoordinator {
     if (mode === 'explore') return []
     const list = [...new Set((raw ?? []).map(text => text.trim()).filter(Boolean))]
     if (!list.length && roleSeparated(binding) && mode === 'implement') {
-      throw new Error('fusion_delegate needs requirements: quote the user\'s hard requirements verbatim (1-20 exact excerpts of the user\'s messages: required behaviour, names, strings, formats, acceptance criteria). They are frozen for the Sidekick and checked one by one in your review.')
+      throw new Error('fusion_next_delegate needs requirements: quote the user\'s hard requirements verbatim (1-20 exact excerpts of the user\'s messages: required behaviour, names, strings, formats, acceptance criteria). They are frozen for the Sidekick and checked one by one in your review.')
     }
     if (list.length > 20 || list.some(text => text.length < 4 || text.length > 600)) throw new Error('requirements: 1-20 quotes of 4-600 characters each')
     const haystack = normalizeQuote(userTexts.join('\n'))
@@ -1641,7 +1641,7 @@ export class FusionCoordinator {
       if (failure?.workOrderId === order.id && failure.childId === state.acceptedChild) {
         const quota = failure.category === 'quota-exhausted'
         return JSON.stringify({ status: 'needs-decision', reasonCode: quota ? 'worker-quota-exhausted' : 'worker-provider-error',
-          reason: 'Worker stopped without fusion_submit_result because its provider request failed', childId: state.acceptedChild,
+          reason: 'Worker stopped without fusion_next_submit_result because its provider request failed', childId: state.acceptedChild,
           workerRunning: false, provider: this.routeFor(binding, 'worker').provider, model: this.routeFor(binding, 'worker').model, failureCode: failure.code,
           next: quota
             ? 'The Worker provider explicitly reported exhausted quota. Do not retry feedback, request takeover or claim completion. Explain this provider limit and await user input after quota is restored. Existing work is retained.'
@@ -1655,8 +1655,8 @@ export class FusionCoordinator {
         childId: state.acceptedChild, workerRunning: false,
         ...(spent ? spent : {}),
         next: spent
-          ? 'No further Worker request can be admitted. Do not retry fusion_rework or claim completion. Explain the incomplete work and await a user decision; existing files and evidence are retained. This is not a provider outage or quota limit.'
-          : 'Worker stopped without fusion_submit_result; its turn is incomplete. This is WORKFLOW_INCOMPLETE, not a provider outage or quota limit. Do not describe the Sidekick as unavailable.' })
+          ? 'No further Worker request can be admitted. Do not retry fusion_next_rework or claim completion. Explain the incomplete work and await a user decision; existing files and evidence are retained. This is not a provider outage or quota limit.'
+          : 'Worker stopped without fusion_next_submit_result; its turn is incomplete. This is WORKFLOW_INCOMPLETE, not a provider outage or quota limit. Do not describe the Sidekick as unavailable.' })
     }
     if (order.mode === 'explore') {
       const report = runtime.explorationSubmitted
@@ -1682,8 +1682,8 @@ export class FusionCoordinator {
       return JSON.stringify({ status: complete ? 'exploration-ready' : 'exploration-blocked', report, verification: 'unverified',
         excerpts: report.sources.map(source => ({ ...source, text: Buffer.from(this.store.readArtifact(binding.taskId, source.excerpt.id)).toString('utf8') })),
         next: complete
-          ? 'Use these source findings to make your own plan, then fusion_delegate to this same Worker. For missing facts use fusion_rework; for a read-only question use fusion_finish_direct. Exploration does not complete implementation.'
-          : 'Exploration did not finish. If specific feedback can resolve the blocker, use fusion_rework with the same Worker. Otherwise explain the blocker and end this turn to await the missing input. No Worker is still running; fusion_wait will not retry it. Do not call fusion_finish_direct, fusion_review_result or fusion_delegate on this incomplete report.' })
+          ? 'Use these source findings to make your own plan, then fusion_next_delegate to this same Worker. For missing facts use fusion_next_rework; for a read-only question use fusion_next_finish_direct. Exploration does not complete implementation.'
+          : 'Exploration did not finish. If specific feedback can resolve the blocker, use fusion_next_rework with the same Worker. Otherwise explain the blocker and end this turn to await the missing input. No Worker is still running; fusion_next_wait will not retry it. Do not call fusion_next_finish_direct, fusion_next_review_result or fusion_next_delegate on this incomplete report.' })
     }
     // Exploration already returned. Implementation and text reports still need a fresh tree snapshot.
     const candidate = this.#candidate(runtime)
@@ -1760,15 +1760,15 @@ export class FusionCoordinator {
       ...(requirements.length ? { requirements: requirements.map((item, index) => ({ index: index + 1, text: item.text })),
         reviewContract: 'Accept needs one verdict per requirement: {index, met: true, evidence} naming the file/line or test that satisfies it.' } : {}),
       ...(spans.length ? { literalSpansMissing: spans,
-        warning: 'These exact spans from the user\'s requirements occur in no changed file. If the requirement asks for that literal text, the candidate does not satisfy it: use fusion_rework. An accept must address each span in that requirement\'s evidence.' } : {}),
+        warning: 'These exact spans from the user\'s requirements occur in no changed file. If the requirement asks for that literal text, the candidate does not satisfy it: use fusion_next_rework. An accept must address each span in that requirement\'s evidence.' } : {}),
       ...(knownFailures.length ? { preExistingFailures: knownFailures } : {}),
       ...(rewritten.length ? { rewrittenTests: rewritten,
         testWarning: 'Existing tests lost or changed original lines. Check that the change extends them rather than rewriting an old expectation to fit the new behaviour; an accept must name each file in its reason.' } : {}),
       ...(runtime.checks.length ? {} : { reviewOnly: 'No automated acceptance check ran for this work order. Your review of the diff is the only verification; say so plainly in the final answer.' }),
       ...(unrunnable.length ? { checkDefinitionProblem: {
         checks: unrunnable, reason: 'The acceptance command could not execute on this host (program not found or not executable)',
-        next: 'This is not a code defect. After recording the review, correct the command with fusion_rework checks, keeping every protected definition path.' } } : {}),
-      next: 'Inspect relevant changes and evidence. Record fusion_review_result; use fusion_rework for corrections.' })
+        next: 'This is not a code defect. After recording the review, correct the command with fusion_next_rework checks, keeping every protected definition path.' } } : {}),
+      next: 'Inspect relevant changes and evidence. Record fusion_next_review_result; use fusion_next_rework for corrections.' })
   }
 
   /** Literal `code` spans from user requirements that appear in none of the changed files. */
@@ -1858,7 +1858,7 @@ export class FusionCoordinator {
     await agent.whenIdle()
     await agent.runMaintenance(async () => {
       const state = this.state(binding.taskId)
-      if (this.#trackingErrors.has(binding.taskId) || state.control.recovering || state.control.outcomeUnknown) throw new Error('Review the interrupted effects and use /fusion recover <inspection note>')
+      if (this.#trackingErrors.has(binding.taskId) || state.control.recovering || state.control.outcomeUnknown) throw new Error('Review the interrupted effects and use /fusion-next recover <inspection note>')
       // Official module HMR can initialize the next generation while the old
       // one is still draining its Agent-owned tools. Retry that failed partial
       // scope only under explicit, quiescent resume, and retain the pause if
@@ -1938,7 +1938,7 @@ export class FusionCoordinator {
   }
 
   #tools(scope: Context, agent: Agent, role: Role): readonly (() => void)[] {
-    const dispose = [scope.tools.register(defineTool({ name: 'fusion_read_evidence', description: 'Read owned evidence, including check receipt IDs from report coverage. Receipts include the frozen check, actual result and stdout/stderr references. Change manifests contain complete patch and before/after content references. Follow nextOffset until null to read a long artifact; binary content is explicitly base64.',
+    const dispose = [scope.tools.register(defineTool({ name: 'fusion_next_read_evidence', description: 'Read owned evidence, including check receipt IDs from report coverage. Receipts include the frozen check, actual result and stdout/stderr references. Change manifests contain complete patch and before/after content references. Follow nextOffset until null to read a long artifact; binary content is explicitly base64.',
       parameters: { id: { type: 'string', required: true }, offset: { type: 'integer', description: 'Text offset in UTF-16 code units; use nextOffset from the previous page. Default 0.' },
         limit: { type: 'integer', description: 'Maximum page length, from 2 to 24000 UTF-16 code units. Default 24000.' } }, output: textOutput,
       execute: async args => {
@@ -1946,15 +1946,15 @@ export class FusionCoordinator {
         const bytes = readNativeEvidence(this.store, binding.taskId, args.id)
         return JSON.stringify({ id: args.id, ...evidencePage(bytes, args.offset, args.limit) })
       } })),
-      scope.tools.register(defineTool({ name: 'fusion_list_evidence', description: 'List every evidence artifact owned by this task: worker closing transcripts, briefs, feedback, change manifests and check outputs (id, mediaType, bytes). Read any entry with fusion_read_evidence before asking the Worker to repeat output it already produced.',
+      scope.tools.register(defineTool({ name: 'fusion_next_list_evidence', description: 'List every evidence artifact owned by this task: worker closing transcripts, briefs, feedback, change manifests and check outputs (id, mediaType, bytes). Read any entry with fusion_next_read_evidence before asking the Worker to repeat output it already produced.',
       parameters: {}, output: textOutput,
       execute: async () => {
         const binding = this.#binding(agent, role)
         const artifacts = this.store.artifacts(binding.taskId).map(record => ({ id: record.id, mediaType: record.mediaType, bytes: record.bytes }))
         return JSON.stringify({ artifacts, count: artifacts.length })
       } }))]
-    dispose.push(scope.tools.register(defineTool({ name: 'fusion_submit_result', description: role === 'lead'
-      ? 'Lead use only after fusion_takeover: submit your own correction so the frozen checks run again. To judge a Sidekick report, use fusion_review_result instead.'
+    dispose.push(scope.tools.register(defineTool({ name: 'fusion_next_submit_result', description: role === 'lead'
+      ? 'Lead use only after fusion_next_takeover: submit your own correction so the frozen checks run again. To judge a Sidekick report, use fusion_next_review_result instead.'
       : 'Submit the current work-order report and conclude this Worker turn. Read-only exploration requires 1–12 source ranges, unless the directory has no entries on disk and the summary states that the scope is empty. Hidden, gitignored and excluded entries still count, and the host checks again when the Lead collects or finishes the report. Implementation retains frozen checks and Lead review.',
         parameters: { summary: { type: 'string', description: 'Changes and findings; put nonblocking observations here. For an empty scope, state that the scope is empty (for example "the scope is empty" or "没有文件").', required: true }, status: { type: 'string', enum: ['completed', 'blocked', 'needs-decision'], required: true },
           unresolved: { ...stringList, description: 'Remaining requirement failures, blocking risks or decisions. Every item prevents final acceptance. Nonblocking observations belong in summary; never omit an actual unresolved requirement.' },
@@ -2016,12 +2016,12 @@ export class FusionCoordinator {
           return 'Report persisted. The Lead will review after this Worker becomes quiescent.'
         } })))
     if (this.owner(agent)?.binding.profile.interactionMode === 'model-like') dispose.push(scope.tools.register(defineTool({
-      name: 'fusion_read_state', description: 'Read this task from durable storage only when needed, especially after compaction. Follow nextOffset until null to restore constraints before effectful tools.',
+      name: 'fusion_next_read_state', description: 'Read this task from durable storage only when needed, especially after compaction. Follow nextOffset until null to restore constraints before effectful tools.',
       parameters: { offset: { type: 'integer' }, limit: { type: 'integer' } }, output: textOutput,
       execute: async (args) => JSON.stringify(this.onDemand.read(agent, this.#binding(agent, role), role, args.offset, args.limit)),
     })))
     if (role === 'worker') return dispose
-    dispose.push(scope.tools.register(defineTool({ name: 'fusion_takeover', description: this.owner(agent) && enforcedWorkflow(this.owner(agent)!.binding)
+    dispose.push(scope.tools.register(defineTool({ name: 'fusion_next_takeover', description: this.owner(agent) && enforcedWorkflow(this.owner(agent)!.binding)
       ? 'Acquire exclusive write ownership for a Lead correction only after the current implementation report and a recorded rework review. Preserve the frozen checks; submit the correction and review it again.'
       : 'Acquire exclusive write ownership for a small direct task, or for a Lead correction after the current Worker report. A delegated task keeps its frozen acceptance checks and review. Takeover is recorded separately from Worker implementation.',
       parameters: { reason: { type: 'string', required: true } }, output: textOutput,
@@ -2029,15 +2029,15 @@ export class FusionCoordinator {
         if (!args.reason.trim()) throw new Error('Takeover reason required')
         const binding = this.#binding(agent, 'lead'), state = this.state(binding.taskId)
         const escalation = this.#escalation(binding)
-        if (roleSeparated(binding) && !escalation) throw new Error('FUSION_LEAD_READ_ONLY: the Host has not unlocked takeover for this work order')
+        if (roleSeparated(binding) && !escalation) throw new Error('FUSION_NEXT_LEAD_READ_ONLY: the Host has not unlocked takeover for this work order')
         if (!escalation && enforcedWorkflow(binding) && (!state.currentWorkOrder || state.reviewResult?.decision !== 'rework')) {
-          throw new Error('FUSION_TAKEOVER_REQUIRES_REWORK: delegate first, inspect the current report and record a rework review before taking over')
+          throw new Error('FUSION_NEXT_TAKEOVER_REQUIRES_REWORK: delegate first, inspect the current report and record a rework review before taking over')
         }
-        if (state.currentWorkOrder?.mode === 'text') throw new Error('Use fusion_rework to revise the text report')
-        if (state.currentWorkOrder?.mode === 'explore') throw new Error('Exploration cannot grant a writer; send the implementation plan with fusion_delegate first')
+        if (state.currentWorkOrder?.mode === 'text') throw new Error('Use fusion_next_rework to revise the text report')
+        if (state.currentWorkOrder?.mode === 'explore') throw new Error('Exploration cannot grant a writer; send the implementation plan with fusion_next_delegate first')
         const stalled = escalation === 'worker-step-limit' || escalation === 'worker-stalled'
         if (state.currentWorkOrder && !this.#runtime(binding.taskId).submitted && !stalled && !this.#runtime(binding.taskId).takeover) {
-          throw new Error('Lead takeover waits for the current Worker report; use fusion_rework on the same Worker')
+          throw new Error('Lead takeover waits for the current Worker report; use fusion_next_rework on the same Worker')
         }
         if (state.acceptedChild) {
           const child = this.ctx.agents.get(NativeSessionId(state.acceptedChild))
@@ -2062,13 +2062,13 @@ export class FusionCoordinator {
         }
         if (!state.currentWorkOrder) this.append(binding.taskId, 'intent/chosen', { intent: 'DIRECT' })
         this.#acquire(binding, base.root, agent.id, OperationId(randomUUID()))
-        return 'Lead owns the write lease. For an existing work order call fusion_submit_result after the correction. For direct work, fusion_delegate can transfer the lease after preparation; call fusion_finish_direct only when the entire user task is complete.'
+        return 'Lead owns the write lease. For an existing work order call fusion_next_submit_result after the correction. For direct work, fusion_next_delegate can transfer the lease after preparation; call fusion_next_finish_direct only when the entire user task is complete.'
       } })))
-    dispose.push(scope.tools.register(defineTool({ name: 'fusion_finish_direct', description: 'Complete the entire direct user task or an answered read-only exploration. This closes the task; it is not a lease-release helper before delegation. Never use for an implementation work order. This does not claim independently verified acceptance.',
+    dispose.push(scope.tools.register(defineTool({ name: 'fusion_next_finish_direct', description: 'Complete the entire direct user task or an answered read-only exploration. This closes the task; it is not a lease-release helper before delegation. Never use for an implementation work order. This does not claim independently verified acceptance.',
       parameters: {}, output: textOutput, execute: async () => {
         const binding = this.#binding(agent, 'lead'), state = this.state(binding.taskId)
         if (state.currentWorkOrder?.mode === 'explore' && state.exploration?.status !== 'completed') {
-          throw new Error('Exploration is incomplete. Use fusion_rework with specific feedback. Explain the blocker and end this turn if missing input is required; do not record an implementation review or completion.')
+          throw new Error('Exploration is incomplete. Use fusion_next_rework with specific feedback. Explain the blocker and end this turn if missing input is required; do not record an implementation review or completion.')
         }
         const explored = state.currentWorkOrder?.mode === 'explore' && state.phase === 'PLANNING'
           && state.exploration?.workOrderId === state.currentWorkOrder.id && state.exploration.status === 'completed'
@@ -2093,12 +2093,12 @@ export class FusionCoordinator {
         this.append(binding.taskId, 'task/completed', { snapshot, verification: 'unverified' })
         return 'Direct task recorded; describe the checks you actually ran and any remaining uncertainty.'
       } })))
-    dispose.push(scope.tools.register(defineTool({ name: 'fusion_explore', description: 'Optionally ask the persistent Worker for read-only code exploration before you plan implementation. It returns source-backed findings without changing files or running commands. Later fusion_delegate continues the same Worker.',
+    dispose.push(scope.tools.register(defineTool({ name: 'fusion_next_explore', description: 'Optionally ask the persistent Worker for read-only code exploration before you plan implementation. It returns source-backed findings without changing files or running commands. Later fusion_next_delegate continues the same Worker.',
       parameters: { goal: { type: 'string', required: true }, brief: { type: 'string', required: true }, constraints: stringList,
-        block: { type: 'boolean', description: 'Default true. False returns while exploration runs; use fusion_wait to collect findings.' } }, output: textOutput,
+        block: { type: 'boolean', description: 'Default true. False returns while exploration runs; use fusion_next_wait to collect findings.' } }, output: textOutput,
       execute: (args, exec) => this.delegate(agent, { ...args, allowedPaths: [], checks: [] }, exec, 'explore') })))
     if (this.owner(agent)?.binding.profile.interactionMode === 'model-like') dispose.push(scope.tools.register(defineTool({
-      name: 'fusion_delegate_text', description: 'Delegate writing, synthesis or analysis of supplied material to the persistent Sidekick. No workspace, test runner or external tools required. Include the complete relevant material and success criteria in the brief. Review the report before delivering.',
+      name: 'fusion_next_delegate_text', description: 'Delegate writing, synthesis or analysis of supplied material to the persistent Sidekick. No workspace, test runner or external tools required. Include the complete relevant material and success criteria in the brief. Review the report before delivering.',
       parameters: { goal: { type: 'string', required: true }, brief: { type: 'string', required: true }, constraints: stringList, block: { type: 'boolean' } }, output: textOutput,
       execute: (args, exec) => this.delegate(agent, { ...args, allowedPaths: [], checks: [] }, exec, 'text'),
     })))
@@ -2114,11 +2114,11 @@ export class FusionCoordinator {
       definitionPaths: { ...optionalStringList, description: 'Existing acceptance files whose bytes must remain unchanged; default none. Do not list files the Worker will create or edit.' },
       baseline: { type: 'string', enum: ['no-new-failures'], description: `For a broad regression suite (${BASELINE_PARSERS.join(', ')}) that may already have unrelated failing tests: the Host runs it once on the untouched workspace and then requires no new failures. Omit for the tests this task must make pass.` },
     } } as const
-    dispose.push(scope.tools.register(defineTool({ name: 'fusion_delegate', description: 'Delegate a bounded implementation to an independent persistent Worker. After direct Lead preparation, validated delegation transfers the quiescent write lease without completing the task. By default wait for its report and native checks; block=false returns while the Worker runs.',
+    dispose.push(scope.tools.register(defineTool({ name: 'fusion_next_delegate', description: 'Delegate a bounded implementation to an independent persistent Worker. After direct Lead preparation, validated delegation transfers the quiescent write lease without completing the task. By default wait for its report and native checks; block=false returns while the Worker runs.',
       parameters: { goal: { type: 'string', description: 'The complete implementation outcome, including all planned stages.', required: true },
         brief: { type: 'string', description: 'The current stage plan. Put temporary deferrals and sequencing here; later feedback may advance this stage.', required: true },
         constraints: { ...optionalStringList, description: 'Default none. Only durable requirements that remain true across every planned implementation stage. Do not freeze a temporary deferral such as not implementing stage two yet.' },
-        allowedPaths: { ...stringList, description: 'Workspace-relative allowed changes for all planned stages, including regression tests. The Worker cannot expand this set; after a report you can add paths with fusion_rework addAllowedPaths.' },
+        allowedPaths: { ...stringList, description: 'Workspace-relative allowed changes for all planned stages, including regression tests. The Worker cannot expand this set; after a report you can add paths with fusion_next_rework addAllowedPaths.' },
         block: { type: 'boolean', description: 'Default true. False permits read-only Lead work while the Worker retains write ownership.' },
         checks: { type: 'array', required: true, items: checkItem, description: 'Acceptance commands the Host runs after the Worker reports; [] for review-only work.' },
         requirements: { ...optionalStringList, description: 'The user\'s hard requirements as exact quotes of their messages (required behaviour, names, strings, formats, acceptance criteria), 1-20 items. The Host verifies each quote against the user\'s words, freezes them for the Sidekick, and your accept must give one verdict per item.' } }, output: textOutput,
@@ -2129,16 +2129,16 @@ export class FusionCoordinator {
           console.error('[fusion-delegate-error]', show(error, 0)); throw error
         }
       } })))
-    dispose.push(scope.tools.register(defineTool({ name: 'fusion_rework', description: 'Send specific Lead-authored feedback to the same persistent Worker, including advancing a planned implementation stage. Before a report this continues unfinished work within the Worker-step budget; after a report it consumes a rework round. Active generation and native job waits can be replaced without restarting a tracked job; an active foreground tool finishes before the new brief. Keep durable requirements unchanged. Do not suggest files outside the frozen allowed paths unless you add them with addAllowedPaths.',
+    dispose.push(scope.tools.register(defineTool({ name: 'fusion_next_rework', description: 'Send specific Lead-authored feedback to the same persistent Worker, including advancing a planned implementation stage. Before a report this continues unfinished work within the Worker-step budget; after a report it consumes a rework round. Active generation and native job waits can be replaced without restarting a tracked job; an active foreground tool finishes before the new brief. Keep durable requirements unchanged. Do not suggest files outside the frozen allowed paths unless you add them with addAllowedPaths.',
       // Orchestration includes human approval waits; leaf tools retain their
       // resource deadlines, but the wait itself must not expire.
-      parameters: { feedback: { type: 'string', required: true }, block: { type: 'boolean', description: 'Default true. False returns after delivery; call fusion_wait for the report and checks.' },
+      parameters: { feedback: { type: 'string', required: true }, block: { type: 'boolean', description: 'Default true. False returns after delivery; call fusion_next_wait for the report and checks.' },
         addAllowedPaths: { ...optionalStringList, description: 'After a Worker report, when the task needs changes outside the frozen allowedPaths (for example an existing test elsewhere that encodes the old behaviour): workspace-relative paths to add. Paths are only added; the change is recorded and consumes this rework round.' },
         checks: { type: 'array', items: checkItem, description: 'Omit to keep the frozen acceptance checks. Only when a frozen check itself is wrong (for example its interpreter does not exist on this host), pass the complete corrected set after the Worker report. Every existing definitionPath must stay protected; the amendment is recorded and consumes this rework round.' } }, output: textOutput,
       execute: (args, exec) => this.rework(agent, args.feedback, exec, args.block ?? true, args.checks && normalizeChecks(args.checks), args.addAllowedPaths) })))
-    dispose.push(scope.tools.register(defineTool({ name: 'fusion_wait', description: 'Wait for the background Worker to become quiescent. Exploration returns source findings for planning; implementation runs its frozen native checks. Call sequentially after a handoff or feedback.',
+    dispose.push(scope.tools.register(defineTool({ name: 'fusion_next_wait', description: 'Wait for the background Worker to become quiescent. Exploration returns source findings for planning; implementation runs its frozen native checks. Call sequentially after a handoff or feedback.',
       parameters: {}, output: textOutput, execute: (_args, exec) => this.wait(agent, exec) })))
-    dispose.push(scope.tools.register(defineTool({ name: 'fusion_review_result', description: 'Record a completed Lead review bound to the candidate this native request received. Accept requires passing evidence.',
+    dispose.push(scope.tools.register(defineTool({ name: 'fusion_next_review_result', description: 'Record a completed Lead review bound to the candidate this native request received. Accept requires passing evidence.',
       parameters: { decision: { type: 'string', enum: ['accept', 'rework', 'needs-decision'], required: true }, reason: { type: 'string', required: true },
         requirements: { type: 'array', description: 'Required to accept when the work order has user requirements: one verdict per requirement index.',
           items: { type: 'object', additionalProperties: false, properties: { index: { type: 'integer', required: true }, met: { type: 'boolean', required: true },

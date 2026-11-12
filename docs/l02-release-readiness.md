@@ -42,7 +42,7 @@
 在隔离的 `~/dsh/dsh-test-home` DSH_HOME 上运行 DSH NEXT 2.0.22-next（0.2.2-rc.1 内核）验证：
 
 - 插件加载、Fusion · 自动模型菜单、configure API（revision CAS）、v2 迁移、激活缝（fail-closed 与 operator-attested 两态）、真实 Fusion turn（回复 + 标题经虚拟提供者）、S03/S04 切出挂起+切回恢复 v2 事件、真实重启后 20 个 run 持久化与新会话激活 — **全部在 Host 内实证**。
-- **Worker 委派全链路（2026-11-12 实证）**：Lead `fusion_delegate` → work-order 派生 → 独立 Worker 会话（cpa/devin-swe-2-flash）→ 嵌套 native 检查（修复后的 batch API）→ Worker `fusion_submit_result` → Lead `fusion_review_result` accept → task COMPLETED，交付文件真实落盘且单测通过。
+- **Worker 委派全链路（2026-11-12 实证）**：Lead `fusion_next_delegate` → work-order 派生 → 独立 Worker 会话（cpa/devin-swe-2-flash）→ 嵌套 native 检查（修复后的 batch API）→ Worker `fusion_next_submit_result` → Lead `fusion_next_review_result` accept → task COMPLETED，交付文件真实落盘且单测通过。
 - 单元层记录过的宿主兼容修复（presentAs 特征检测、restrict fail-closed、agent/request 路由改写禁令、turn/start 防重入 select、虚拟提供者 stream 委托、tools.execute batch API 兼容 + #nestedChecks parent 匹配放宽）——见 docs/in-host-validation.md §“兼容问题”。
 
 ### 2.0.1 双选择器 UX 与场景矩阵 GUI 验证（2026-11-12，commit d706b0e 起）
@@ -57,11 +57,11 @@
   - **S10/S11** 分支继承与独立规划：fork 点继承父规划（pair.lead=gpt-6-luna(max)）；分支切到 swe-2 → syncSessionPairLead 更新分支 pair.lead 而父不变；LLM 实走 `cpa devin/swe-2`。
   - **S13** 一分支挂起另一分支继续：分支 SUSPENDED rev8 同时父 RUNNING 并完成回合。
   - **S14** 分支运行中模型迁移：S11 的 lead 切换发生在分支 RUNNING 期间（`syncSessionPairLead` 只更新 pair 文档，run 不重建不挂起）。
-  - **S15** 历史切换同时 Host 重启：重启后 reconciliation 追加 `recovery/needed` → RECOVERING → `/fusion recover <note>` + `/fusion resume` 恢复（实测多轮）。
+  - **S15** 历史切换同时 Host 重启：重启后 reconciliation 追加 `recovery/needed` → RECOVERING → `/fusion-next recover <note>` + `/fusion-next resume` 恢复（实测多轮）。
   - **S16** fork 发生在插件未初始化时：分支初始无 pair（普通会话），插件状态不需要。
   - **S17** 快速反复切换：执行器 off/on 3 连切（0.4s 间隔）→ 仅一组 SUSPEND 事件（幂等），下一轮 RESTORE_REQUESTED+RESTORED 干净恢复 rev6。
   - **S18** 缺失 legacy binding：单元覆盖 NEEDS_REPAIR fail-closed（不伪造 run）。
-  - **S19** 双分支同路径写冲突：`e7c730e` FUSION_FILE_CONFLICT 实现+单元测试（未做真实双 worker 撞文件 E2E）。
+  - **S19** 双分支同路径写冲突：`e7c730e` FUSION_NEXT_FILE_CONFLICT 实现+单元测试（未做真实双 worker 撞文件 E2E）。
   - **S20** forkPointSeq 后事件不泄漏：v2 journal 按 run 隔离，分支 run 事件全部自有（构造保证+实测）。
 - **T18** drain 期间新消息、`T07` 429 fallback、`Q04/Q05` 越权写、`Q09` 预算硬限、`Q16` UI/DB 一致、`E0-E3` 证据级别：分别由单测/门禁覆盖或在各场景间接实证（GUI 状态与 fusion_events 始终一致）。
 
@@ -76,7 +76,7 @@
 
 ### 2.2 compat 门禁已跑通（新增验证，2026-11-11）
 
-`DSHX_COMPACT_SAVIOUR` 目标插件源码已在 npm 上定位并取得：**`dsh-compact-saviour@0.2.9`**（含 `src/controller.ts` 的 `class Controller` 与 `src/routes.ts` 的 `CompactionRouteRegistry`；dsh-model-fusion 各版本均无此符号，属不同插件）。解包至 `~/dsh/插件/compat-fixtures/dsh-compact-saviour`（仓库外，package.json sha256 `8af6ab42…`），随后：
+`DSHX_COMPACT_SAVIOUR` 目标插件源码已在 npm 上定位并取得：**`dsh-compact-saviour@0.2.9`**（含 `src/controller.ts` 的 `class Controller` 与 `src/routes.ts` 的 `CompactionRouteRegistry`；fusion-next 各版本均无此符号，属不同插件）。解包至 `~/dsh/插件/compat-fixtures/dsh-compact-saviour`（仓库外，package.json sha256 `8af6ab42…`），随后：
 
 - 命令：`DSHX_HARNESS=$HOME/dsh/releases/0.1.6-alpha.2 DSHX_COMPACT_SAVIOUR=~/dsh/插件/compat-fixtures/dsh-compact-saviour pnpm exec vitest run --config vitest.compat.config.mts`
 - 结果：`compat-tests/session-routing.spec.ts` **10/10 通过**（1.15s）——会话路由兼容语义（模型选择投影 + saviour Controller/CompactionRouteRegistry 对接）在真实插件源码 + 固定 Host 检出下验证通过。
@@ -84,12 +84,12 @@
 
 ### 1.5 缺口项收口（2026-11-12，6 项）
 
-1. **Worker 证据可发现性**（`6de666e`）：`fusion_list_evidence` 工具 + settlement notice 指引强化（Worker 不再复述归档原文，Lead 可枚举全部 task artifacts）。
+1. **Worker 证据可发现性**（`6de666e`）：`fusion_next_list_evidence` 工具 + settlement notice 指引强化（Worker 不再复述归档原文，Lead 可枚举全部 task artifacts）。
 2. **V2Shadow 旧轨 → v2 日志镜像**（`54c147e`）：legacy task 事件投影为 v2 journal 事件（generation/assignment/brief/arbitration）。
 3. **S19 跨分支文件写拒绝**（`e7c730e`）：写工具经 `fileConflicts` 门禁对照 v2 journal 的 ASSIGNMENT_FILES_CLAIMED。
 4. **工单 → v2 效果台账**（`19ba593`）：work-order/prepared → EFFECT_INTENT，claimed → DISPATCHED，submitted → RECEIPT，outcome-unknown → UNRESOLVED（恢复可见性）。
 5. **Token 结构开销**：如实记录——fusion-role prompt + ~12 tool defs 为结构性开销，`assembleContextFor` 无 purpose 字段无法在接缝处按用途裁剪；量测显示 fusion 输入 token 低于 direct（1485 vs 1831 均值，缓存吸收）。不消除，作已知残差。
-6. **有界并行 explore 通道**（`bf3cd73`）：主工单在飞时允许第二个 `fusion-parallel-*` 只读 explore 子会话（own order/accepted/exploration 槽位 + 独立提交槽，主工单不互撞）。
+6. **有界并行 explore 通道**（`bf3cd73`）：主工单在飞时允许第二个 `fusion-next-parallel-*` 只读 explore 子会话（own order/accepted/exploration 槽位 + 独立提交槽，主工单不互撞）。
 
 ## 3. 发布判定
 
