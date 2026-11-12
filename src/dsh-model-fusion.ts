@@ -5,12 +5,14 @@ import { isAbsolute, join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import type { ModelModality } from '@deepseek-ai/dsh-llm'
+import type { GenerateOptions, ModelModality, StreamChunk } from '@deepseek-ai/dsh-llm'
+import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-api-session-controller'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-commands'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
-import { FusionCatalogAdapter, FUSION_PROVIDER, FUSION_MODEL, installNativeFusionSelection } from './host/native-selection.js'
+import { FusionCatalogAdapter, FUSION_PROVIDER, FUSION_MODEL, installNativeFusionSelection, type FusionDispatch } from './host/native-selection.js'
+import type { PhysicalRoute } from './contracts.js'
 import type { ResolvedProfile } from './profile/resolve.js'
 import { choiceFromProfile, modelProfileFromChoice, validatePairChoice, savedLeadRoute } from './host/settings.js'
 import { CachePolicy, cacheView } from './host/cache-policy.js'
@@ -83,6 +85,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     }
     return new SessionLifecycle(lifecycleManager, capabilityReport())
   }
+  const appliedPhysicalRoutes = new Map<string, { provider: string; model: string }>()
   const fusionActivate = (sessionId: string): void => {
     // Deterministic per-session identities keep activation idempotent: an exact
     // retry collapses into the already-committed journal events instead of
@@ -126,6 +129,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     creating = (async () => {
       const profile = frozen ?? await configuredProfile()
       runtime = new FusionCoordinator(ctx, store, { profile, workerTools: config.workerTools ?? defaultWorkerTools,
+        onPhysicalRouteSelected: (agentId, route) => appliedPhysicalRoutes.set(agentId, route),
         resumeAuthorization: binding => needsBudget(binding.profile) ? budget.check(effectiveRoutes(binding)).authorizationId : 'native-account',
         authorizeRequest: (_agent, binding) => {
           if (!needsBudget(binding.profile)) return
@@ -164,7 +168,18 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
       return undefined
     }
   }
-  ctx.effect(() => ctx.llm.registerAdapter([FUSION_PROVIDER], new FusionCatalogAdapter(leadInputModalities)))
+  // Virtual provider dispatch: the session/agent model state stays on
+  // dsh-model-fusion/auto while every stream is delegated to the configured
+  // Lead's physical adapter. The token meter observes both the fusion call and
+  // the physical call (accounting duplicate until the dedicated Fusion LLM
+  // layer replaces this delegation).
+  const fusionDispatch: FusionDispatch = (options: GenerateOptions, route: PhysicalRoute): AsyncIterable<StreamChunk> => ctx.llm.stream({
+    ...options,
+    provider: route.provider,
+    model: route.model,
+    ...(route.reasoningEffort === undefined ? {} : { reasoningEffort: ReasoningEffortId(route.reasoningEffort) }),
+  })
+  ctx.effect(() => ctx.llm.registerAdapter([FUSION_PROVIDER], new FusionCatalogAdapter(leadInputModalities, fusionDispatch, () => defaultProfile?.profile.lead)))
   ctx.effect(() => installNativeFusionSelection(ctx, {
     coordinator: () => runtime, profile: () => defaultProfile,
     // C01 activation seam: once a session commits to Fusion, the journal-backed
@@ -172,6 +187,9 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     // Fail-closed capability gating lives inside the adapter; a denied or
     // failing activation surfaces as an explicit request error.
     activate: fusionActivate,
+    // Physical routes applied via agent.model.select() journal an echo event;
+    // the listener must recognise it instead of reading it as a menu action.
+    appliedRoutes: { read: agentId => appliedPhysicalRoutes.get(agentId) },
     selection: agent => {
       const selection = agent.session.snapshotEvents().findLast(event => event.type === 'model/selection')
       if (selection?.type === 'model/selection') return selection.data

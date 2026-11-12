@@ -72,6 +72,8 @@ export interface CoordinatorOptions {
   authorizeRequest(agent: Agent, binding: SessionBinding, role: Role, turn: number, step: number): void
   /** Actual native stream admission, including auxiliary compaction calls. */
   resumeAuthorization?(binding: SessionBinding): string
+  /** Relays routes the scope layer applied via agent.model.select() to the selection listener. */
+  onPhysicalRouteSelected?(agentId: string, route: { provider: string; model: string }): void
   reserveRequest?(request: GenerateOptions, binding: SessionBinding, role: Role): void
   leaseRoot?: string
   maxWorkerSteps?: number
@@ -374,6 +376,7 @@ export class FusionCoordinator {
       canRequest: (agent, binding, role) => this.#requestBlocked(agent, binding, role),
       canExecute: (exec, binding, role) => this.#toolBlocked(exec, binding, role),
       modelLimits: (provider, model) => resolveModelOutputLimits(this.ctx, provider, model),
+      onPhysicalRouteSelected: (agentId, route) => this.options.onPhysicalRouteSelected?.(agentId, route),
       beforeRequest: (agent, turn, step, binding, role) => {
         this.options.authorizeRequest(agent, binding, role, turn, step)
         this.roleSandbox.ensure(agent, binding, role, role === 'lead' && this.#leadWriter(binding, agent))
@@ -657,8 +660,10 @@ export class FusionCoordinator {
     const taskId = asTaskId(randomUUID())
     this.#createTask(agent, taskId, resolved)
     const binding = this.bindings.select(agent.id, taskId, resolved)
-    this.modelControl.reset(binding)
-    this.scopes.install(agent, binding, 'lead')
+    try {
+      this.modelControl.reset(binding)
+      this.scopes.install(agent, binding, 'lead')
+    } catch (error) { throw error }
   }
 
   #createTask(agent: Agent, taskId: TaskId, resolved: ResolvedProfile, firstSeq?: number): void {

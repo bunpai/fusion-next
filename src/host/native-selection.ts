@@ -1,6 +1,6 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { LlmAdapter } from '@deepseek-ai/dsh-llm'
+import { LlmAdapter, LlmError, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, LlmModelInfo, LlmResolvedModelInfo, ModelModality, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-api-session-controller/types'
@@ -16,9 +16,21 @@ export const isFusionSelection = (route: { provider?: string; model?: string } |
 /** Resolves the configured Lead's declared input modalities; undefined means unconfigured or unverifiable. */
 export type LeadInputModalities = () => Promise<readonly ModelModality[] | undefined>
 
-/** Catalog-only local adapter; the native request is physically routed before dispatch. */
+/** Streams one request through the route's physical adapter via the LLM runtime. */
+export type FusionDispatch = (options: GenerateOptions, route: PhysicalRoute) => AsyncIterable<StreamChunk>
+
+/**
+ * Virtual local provider: the session and agent model state stay on
+ * dsh-model-fusion/auto (UI identity + journal intent), while every stream is
+ * dispatched through the configured Lead's physical route. Auxiliary callers
+ * (session title) take the same route and never block a turn.
+ */
 export class FusionCatalogAdapter extends LlmAdapter {
-  constructor(private readonly leadInputModalities?: LeadInputModalities) { super() }
+  constructor(
+    private readonly leadInputModalities?: LeadInputModalities,
+    private readonly dispatch?: FusionDispatch,
+    private readonly resolveLead?: () => PhysicalRoute | undefined,
+  ) { super() }
   override providerInfo(provider: string) { return { id: provider, name: 'Fusion' } }
   override async listModels(provider: string): Promise<readonly LlmModelInfo[]> {
     // The Lead is the only role that reads user content, so the entry admits
@@ -32,8 +44,28 @@ export class FusionCatalogAdapter extends LlmAdapter {
     if (provider !== FUSION_PROVIDER || model !== FUSION_MODEL) throw new Error('Unknown local Fusion selection')
     return (await this.listModels(provider))[0]!
   }
-  override async *stream(_options: GenerateOptions): AsyncIterable<StreamChunk> {
-    throw new Error('Fusion 尚未就绪。请前往设置 → Fusion 配置 Lead 和 Worker。')
+  override async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+    const route = this.resolveLead?.()
+    if (!route || !this.dispatch) {
+      // Unconfigured Fusion. Never throw synchronously — the session-title
+      // pipeline escalates a thrown LlmError into a turn failure. Yield a soft
+      // finish instead so the host falls back to its first-prompt title, matching
+      // the old adapter's semantics where auxiliary requests never block a turn.
+      yield {
+        type: 'finish',
+        reason: { kind: 'error', failure: new LlmError('Fusion 尚未就绪。请前往设置 → Fusion 配置 Lead 和 Worker。', 'FUSION_NOT_READY').failure }
+      }
+      return
+    }
+    // Dispatch through the Lead's physical adapter. The token meter sees both
+    // the fusion call and the physical call (known accounting duplicate until
+    // the dedicated Fusion LLM layer replaces this delegation).
+    yield* this.dispatch({
+      ...options,
+      provider: route.provider,
+      model: route.model,
+      reasoningEffort: route.reasoningEffort === undefined ? undefined : ReasoningEffortId(route.reasoningEffort),
+    }, route)
   }
 }
 
@@ -48,11 +80,37 @@ export function installNativeFusionSelection(ctx: Context, input: {
    * installer keeps its previous behavior unchanged (fail-closed, no Host calls).
    */
   activate?(sessionId: string): void
+  /**
+   * Registry of physical routes the scope layer applied via agent.model.select().
+   * 0.2.2 journals every select, so the journal's latest model/selection becomes
+   * our own physical echo; without this registry the echo reads as a user's menu
+   * action and clears the freshly created Fusion binding mid-turn. The caller
+   * owns the map because the scope installer marks it through its own callback
+   * chain (scopes → coordinator options → entry).
+   */
+  appliedRoutes?: { read(agentId: string): { provider: string; model: string } | undefined }
 }): () => void {
   const pending = new Map<string, Promise<void>>()
   const failures = new Map<string, string>()
   const desired = new Map<string, PhysicalRoute>()
-  const selection = (agent: Agent) => desired.get(agent.id) ?? input.selection(agent)
+  // The session journal is the authoritative latest selection: two quick
+  // model/selection events (menu re-assert + new pick) can otherwise leave a
+  // stale desired entry that clears a just-created Fusion binding.
+  const sessionSelection = (agent: Agent) => {
+    const last = agent.session.snapshotEvents().findLast(event => event.type === 'model/selection')
+    const data = last?.data as PhysicalRoute | undefined
+    if (data && !isFusionSelection(data)) {
+      const echoed = input.appliedRoutes?.read(agent.id)
+      // A physical selection identical to the route we applied ourselves is the
+      // journal echo of agent.model.select(), never a user intent. The scope
+      // layer only selects while a Fusion binding is active, so the effective
+      // selection stays Fusion; the desired map must not be consulted either,
+      // because the echo event also wrote itself there.
+      if (echoed && data.provider === echoed.provider && data.model === echoed.model) return { provider: FUSION_PROVIDER, model: FUSION_MODEL }
+    }
+    return data
+  }
+  const selection = (agent: Agent) => sessionSelection(agent) ?? desired.get(agent.id) ?? input.selection(agent)
   const selected = (agent: Agent) => input.coordinator()?.bindings.read(agent.id)?.binding.selected === true
   const change = (agent: Agent) => {
     if (agent.session.header.parentSession || pending.has(agent.id)) return
