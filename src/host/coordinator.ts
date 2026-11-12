@@ -8,7 +8,7 @@ import { NativeWorkerNotices } from './native-worker-notices.js'
 import { SessionId as NativeSessionId } from '@deepseek-ai/dsh-session'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ToolExecution, ToolRunContext } from '@deepseek-ai/dsh-tools'
-import type { ExplorationReport, FusionEvent, Role, TaskId, WorkerReport, WorkOrder } from '../contracts.js'
+import type { ExplorationReport, FusionEvent, PhysicalRoute, Role, TaskId, WorkerReport, WorkOrder } from '../contracts.js'
 import { EpochId, OperationId, SessionId, SnapshotId, TaskId as asTaskId, WorkOrderId } from '../contracts.js'
 import { digestOf } from '../digest.js'
 import { WorkspaceWriteLease } from '../execution/write-lease.js'
@@ -74,6 +74,13 @@ export interface CoordinatorOptions {
   resumeAuthorization?(binding: SessionBinding): string
   /** Relays routes the scope layer applied via agent.model.select() to the selection listener. */
   onPhysicalRouteSelected?(agentId: string, route: { provider: string; model: string }): void
+  /**
+   * Per-session route overrides from the composer pair picker (session-pair
+   * doc). When present for a session, it wins over the frozen binding profile
+   * for that role — this is what makes the per-session executor (and planner
+   * switches) take effect without re-binding the session.
+   */
+  sessionRoutes?(sessionId: string): { lead?: PhysicalRoute; worker?: PhysicalRoute } | undefined
   /** enforced-v3 only; operator opt-out: false makes the Lead a normal model (no tool ceiling, no read-only gate). */
   leadSandbox?: boolean
   /** 'inherit' (default): Worker inherits the parent session's full toolset (DSH delegation semantics).
@@ -354,6 +361,15 @@ export class FusionCoordinator {
   readonly workflow: NativeWorkflow
   readonly roleSandbox: NativeRoleSandbox
 
+  /**
+   * Role route resolution: per-session pair-picker overrides win over the
+   * model-control view, which wins over the frozen binding profile.
+   */
+  routeFor(binding: SessionBinding, role: Role): PhysicalRoute {
+    return this.options.sessionRoutes?.(binding.sessionId)?.[role]
+      ?? this.modelControl?.route(binding, role) ?? binding.profile[role]
+  }
+
   constructor(readonly ctx: Context, readonly store: SqliteFusionStore, readonly options: CoordinatorOptions) {
     this.bindings = new BindingRepository(store)
     this.workflow = new NativeWorkflow(store)
@@ -365,7 +381,7 @@ export class FusionCoordinator {
     this.onDemand = new NativeOnDemandContext(store, this.taskContext)
     const notices = new NativeWorkerNotices(store)
     this.scopes = new NativeFusionScopes({
-      route: (binding, role) => this.modelControl?.route(binding, role) ?? binding.profile[role],
+      route: (binding, role) => this.routeFor(binding, role),
       beforeTurn: (agent, binding, role) => {
         const previous = this.state(binding.taskId)
         if (role !== 'lead' || previous.control.mode !== 'completed') return binding
@@ -491,7 +507,7 @@ export class FusionCoordinator {
     this.cachePolicy = new CachePolicy(store)
     this.keepalive = new NativeCacheKeepalive(ctx, store, this.#auxiliary, {
       routeKey: owner => digestOf({
-        route: this.modelControl?.route(owner.binding, owner.role) ?? owner.binding.profile[owner.role],
+        route: this.routeFor(owner.binding, owner.role),
         epoch: readModelControl(store, owner.binding)?.epoch ?? 0,
       }),
       owner: agent => this.owner(agent), allowed: (agent, owner) => {
@@ -517,7 +533,7 @@ export class FusionCoordinator {
     }, this.#auxiliary))
     const context = new NativeContextGuard(ctx, store, agent => this.owner(agent), (owner, reason) => {
       if (this.state(owner.binding.taskId).control.mode === 'running') this.append(owner.binding.taskId, 'task/paused', { reason })
-    }, this.taskContext, this.#auxiliary, (binding, role) => this.modelControl.route(binding, role))
+    }, this.taskContext, this.#auxiliary, (binding, role) => this.routeFor(binding, role))
     this.#dispose.push(context.install((_agent, owner, request) => {
       options.reserveRequest?.(request, owner.binding, owner.role)
     }, (agent, request) => {
@@ -542,7 +558,7 @@ export class FusionCoordinator {
       stopAuxiliary: binding => { void this.keepalive.stopTask(binding.taskId, 'provider-unavailable') },
     })
     this.#dispose.push(installCompactionRouting(ctx, {
-      owner: agent => this.owner(agent), route: (binding, role) => this.modelControl.route(binding, role),
+      owner: agent => this.owner(agent), route: (binding, role) => this.routeFor(binding, role),
       epoch: binding => readModelControl(store, binding)?.epoch ?? 0,
     }))
     this.#dispose.push(ctx.on('tools/result', (exec, result) => {
@@ -1414,7 +1430,7 @@ export class FusionCoordinator {
       const accepted = binding.workerId && !parallelLane
         ? await this.transport.continue(agent, childId, brief, exec.signal)
         : await this.transport.start(agent, { childId, brief, label: args.goal.slice(0, 100),
-          route: this.modelControl.route(binding, 'worker'), persona: binding.prompts.worker, allowedTools: this.options.workerTools }, exec.signal)
+          route: this.routeFor(binding, 'worker'), persona: binding.prompts.worker, allowedTools: this.options.workerTools }, exec.signal)
       started = true
       this.append(binding.taskId, 'child/accepted', { operationId: order.operationId, child: childId, messageId: accepted.messageId })
       this.store.advanceOutbox(binding.taskId, order.operationId, 'dispatched', 'accepted', { nativeMessageId: accepted.messageId })
@@ -1626,7 +1642,7 @@ export class FusionCoordinator {
         const quota = failure.category === 'quota-exhausted'
         return JSON.stringify({ status: 'needs-decision', reasonCode: quota ? 'worker-quota-exhausted' : 'worker-provider-error',
           reason: 'Worker stopped without fusion_submit_result because its provider request failed', childId: state.acceptedChild,
-          workerRunning: false, provider: this.modelControl.route(binding, 'worker').provider, model: this.modelControl.route(binding, 'worker').model, failureCode: failure.code,
+          workerRunning: false, provider: this.routeFor(binding, 'worker').provider, model: this.routeFor(binding, 'worker').model, failureCode: failure.code,
           next: quota
             ? 'The Worker provider explicitly reported exhausted quota. Do not retry feedback, request takeover or claim completion. Explain this provider limit and await user input after quota is restored. Existing work is retained.'
             : 'Explain the provider failure without claiming a report or completion. A specific bounded retry may be appropriate for a transient error.' })

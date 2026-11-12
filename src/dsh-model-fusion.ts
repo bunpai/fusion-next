@@ -17,7 +17,7 @@ import type { ResolvedProfile } from './profile/resolve.js'
 import { choiceFromProfile, modelProfileFromChoice, validatePairChoice, savedLeadRoute } from './host/settings.js'
 import { CachePolicy, cacheView } from './host/cache-policy.js'
 import { CACHE_DEFAULTS_CHECKED } from './host/cache-defaults.js'
-import { loadJsonObject, resolveProfile } from './profile/resolve.js'
+import { loadJsonObject, resolveProfile, completeProfile } from './profile/resolve.js'
 import { profileRoutes } from './profile/compactor.js'
 import { loadModelPromptBundle, loadPromptBundle } from './prompts.js'
 import { SqliteFusionStore } from './task/sqlite-store.js'
@@ -35,6 +35,7 @@ import { SessionSuspension } from './session/suspension.js'
 import { EffectLedger } from './effects/ledger.js'
 import { probeHostCapabilities } from './host-capabilities/index.js'
 import { V2Shadow } from './host/v2-shadow.js'
+import { readSessionPair, writeSessionPair, syncSessionPairLead } from './host/session-pair.js'
 
 export * from './index.js'
 
@@ -169,6 +170,23 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   const effectiveRoutes = (binding: SessionBinding) => profileRoutes({ ...binding.profile,
     lead: runtime?.modelControl.route(binding, 'lead') ?? binding.profile.lead,
     worker: runtime?.modelControl.route(binding, 'worker') ?? binding.profile.worker })
+  // Session-pair seam (composer dual pickers): the session's physical host
+  // selection is the planner; the dock picker persists the executor here.
+  const workerOf = (sessionId: string): PhysicalRoute | undefined =>
+    readSessionPair(store, sessionId)?.pair.worker
+  const leadChanged = (sessionId: string, lead: PhysicalRoute): void =>
+    syncSessionPairLead(store, sessionId, lead)
+  const sessionRoutes = (sessionId: string) => readSessionPair(store, sessionId)?.pair
+  const sessionProfile = (_sessionId: string, lead: PhysicalRoute, worker: PhysicalRoute): ResolvedProfile => {
+    const base = defaultProfile
+    if (base) {
+      // Preserve the operator's configured context/cache/compaction policy;
+      // only the two routes come from the session pickers.
+      return { profile: completeProfile({ ...base.profile, lead, worker }, base.prompts), prompts: base.prompts }
+    }
+    const prompts = loadModelPromptBundle()
+    return { profile: completeProfile(modelProfileFromChoice({ lead, worker }), prompts), prompts }
+  }
   let creating: Promise<FusionCoordinator> | undefined
   const getRuntime = (frozen?: ResolvedProfile): Promise<FusionCoordinator> => {
     if (runtime) return Promise.resolve(runtime)
@@ -178,6 +196,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
       runtime = new FusionCoordinator(ctx, store, { profile, workerTools: config.workerTools ?? defaultWorkerTools,
         leadSandbox: config.leadSandbox, workerPolicy: config.workerPolicy,
         onPhysicalRouteSelected: (agentId, route) => appliedPhysicalRoutes.set(agentId, route),
+        sessionRoutes,
         onTaskEvent: (taskId, type, payload) => { try { shadow().handle(taskId, type, payload) } catch { /* shadow is non-fatal */ } },
         // S19 cross-branch write conflicts: a path claimed by another run's open
         // assignment (journaled by the shadow) is denied at the write-lease gate.
@@ -258,6 +277,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     // Fail-closed capability gating lives inside the adapter; a denied or
     // failing activation surfaces as an explicit request error.
     activate: fusionActivate, suspend: fusionSuspend,
+    workerOf, sessionProfile, leadChanged,
     // Physical routes applied via agent.model.select() journal an echo event;
     // the listener must recognise it instead of reading it as a menu action.
     appliedRoutes: { read: agentId => appliedPhysicalRoutes.get(agentId) },
@@ -297,6 +317,13 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
           finally { res.off('close', disconnected) }
         }
         if (url.searchParams.get('view') === 'catalog') return json(res, 200, await ctx.sessionController.modelCatalog())
+        if (url.searchParams.get('view') === 'session-pair') {
+          const sid = url.searchParams.get('sessionId') ?? ''
+          const pair = sid ? readSessionPair(store, sid)?.pair : undefined
+          const bound = sid ? bindings.read(sid)?.binding : undefined
+          return json(res, 200, { worker: pair?.worker ?? null, lead: pair?.lead ?? null,
+            selected: Boolean(bound?.selected), catalog: await physicalCatalog() })
+        }
         if (url.searchParams.get('view') === 'cache') {
           let profile: ResolvedProfile | undefined
           try { profile = await configuredProfile() } catch { profile = undefined }
@@ -381,6 +408,45 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
         if (store.readDocument('settings:profile')?.revision !== body.revision) throw new Error(bi('模型组合已变化，请刷新后再启用额度', 'The pair changed; refresh before enabling limits'))
         const auth = authorizeConfiguredPair(store, profileRoutes(profile.profile), body.limits)
         return json(res, 200, { ok: true, expiresAt: auth.expiresAt })
+      }
+      if (body.action === 'session-pair') {
+        if (typeof body.sessionId !== 'string' || !body.sessionId) throw new Error(bi('会话参数无效', 'Invalid session id'))
+        const sessionId = body.sessionId
+        const prior = readSessionPair(store, sessionId)
+        if (body.worker === null) {
+          // Executor cleared: leave Fusion for this session. A still-selected
+          // binding is suspended + cleared so the next turn runs as a plain
+          // session on the host selection.
+          writeSessionPair(store, sessionId, prior?.revision ?? 0,
+            { schemaVersion: 1, ...(prior?.pair ?? {}), worker: undefined })
+          const binding = bindings.read(sessionId)?.binding
+          if (binding?.selected) {
+            fusionSuspend(sessionId)
+            const agent = ctx.agents.get(SessionId(sessionId))
+            const controller = await getRuntime({ profile: binding.profile, prompts: binding.prompts })
+            if (agent) { if (agent.status !== 'idle') await controller.pause(agent); await controller.clear(agent) }
+            else bindings.clear(sessionId)
+          }
+          return json(res, 200, { ok: true, selected: false })
+        }
+        const candidate = body.worker as { provider?: unknown; model?: unknown; reasoningEffort?: unknown } | undefined
+        if (!candidate || typeof candidate.provider !== 'string' || !candidate.provider
+          || candidate.provider === FUSION_PROVIDER || typeof candidate.model !== 'string' || !candidate.model) {
+          throw new Error(bi('执行模型必须是一个真实模型', 'The executor must be a real model'))
+        }
+        const catalog = await physicalCatalog()
+        const model = catalog.groups.find(group => group.id === candidate.provider)?.models.find(item => item.id === candidate.model)
+        if (!model) throw new Error(bi('执行模型已不可用，请刷新后重选', 'The executor model is no longer available; refresh and choose again'))
+        if (candidate.reasoningEffort !== undefined && candidate.reasoningEffort !== null
+          && (typeof candidate.reasoningEffort !== 'string'
+            || !model.reasoning?.efforts.some(effort => effort.id === candidate.reasoningEffort))) {
+          throw new Error(bi('执行模型不支持所选推理强度', 'The executor does not support the selected reasoning level'))
+        }
+        const worker: PhysicalRoute = { provider: candidate.provider, model: candidate.model,
+          ...(typeof candidate.reasoningEffort === 'string' ? { reasoningEffort: candidate.reasoningEffort } : {}) }
+        writeSessionPair(store, sessionId, prior?.revision ?? 0,
+          { schemaVersion: 1, ...(prior?.pair ?? {}), worker })
+        return json(res, 200, { ok: true, worker })
       }
       throw new Error(bi('请使用原模型菜单选择 Fusion 或切换普通模型', 'Use the model menu to select Fusion or another model'))
     } catch (error) { return json(res, 409, { error: error instanceof Error ? error.message : String(error) }) }
