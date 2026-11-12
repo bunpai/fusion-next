@@ -145,7 +145,12 @@ export function pathAllowed(path: string, allowed: readonly string[]): boolean {
   // `'.'` normalizes to the root: it is the legitimate whole-workspace grant. An empty
   // or absolute allowed entry instead fails normalization above and never authorizes.
   return allowed.some(raw => {
-    const prefix = normalizeRelativePath(raw)
+    // Models routinely write glob-style grants (`dir/**`, `dir/*`). Our matcher is
+    // prefix-based, so fold a trailing `/**` or `/*` (and bare `**`/`*` = whole
+    // workspace) back to the directory prefix instead of treating `**` as a literal
+    // directory name that nothing can ever match.
+    const unglobbed = raw === '*' || raw === '**' ? '.' : raw.replace(/\/\*{1,2}$/, '')
+    const prefix = normalizeRelativePath(unglobbed === raw ? raw : unglobbed === '' ? '.' : unglobbed)
     return prefix !== undefined && (prefix === '' || normalized === prefix || normalized.startsWith(`${prefix}/`))
   })
 }

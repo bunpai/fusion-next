@@ -47,6 +47,18 @@ describe('workspace-relative allowlist paths', () => {
     // On POSIX `src\file.ts` is a single legal filename and must not match a `src` grant.
     else expect(pathAllowed('src\\file.ts', ['src'])).toBe(false)
   })
+
+  it('folds trailing glob markers into prefix grants instead of matching nothing', () => {
+    // Regression for the rework-required false positive seen in-Host: the Lead wrote
+    // 'extracted_pkg/**' and every real change was judged outside the frozen list.
+    expect(pathAllowed('extracted_pkg/update_for_run/backup/runf/main.py', ['extracted_pkg/**'])).toBe(true)
+    expect(pathAllowed('extracted_pkg/a.txt', ['extracted_pkg/*'])).toBe(true)
+    expect(pathAllowed('anywhere/file.ts', ['**'])).toBe(true)
+    expect(pathAllowed('anywhere/file.ts', ['*'])).toBe(true)
+    expect(pathAllowed('other/a.txt', ['extracted_pkg/**'])).toBe(false)
+    // Mid-path glob segments still do not pretend to be wildcards.
+    expect(pathAllowed('a/x/b.txt', ['a/**/b.txt'])).toBe(false)
+  })
 })
 
 describe('model-supplied paths against the canonical workspace root', () => {
