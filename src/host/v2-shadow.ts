@@ -132,6 +132,14 @@ export class V2Shadow {
       brief: { objective: order.goal, constraints: sortedUnique(order.constraints.map(c => c.text)), contextRefs: [], revision: order.revision },
       writeScope: sortedUnique(order.allowedPaths),
     })
+    // S19: claim the work-order write scope so a fork sibling's overlapping
+    // claim is rejected by the reducer and the deny gate can see the owner.
+    const paths = sortedUnique(order.allowedPaths)
+    if (paths.length > 0) {
+      this.append(runId, `fusion/v2-shadow/${runId}/${assignmentId}-files`, 'ASSIGNMENT_FILES_CLAIMED', {
+        assignmentId, paths,
+      })
+    }
   }
 
   private reviseBrief(taskId: TaskId, workOrderId: string, addConstraints: readonly string[]): void {

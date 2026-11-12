@@ -88,6 +88,8 @@ export interface CoordinatorOptions {
   keepaliveClock?: KeepaliveClock
   /** Post-commit observer for durable task events; used by the v2 shadow journal. */
   onTaskEvent?(taskId: TaskId, type: FusionEvent['type'], payload: unknown): void
+  /** S19: deny a workspace-relative write when ANOTHER run's open assignment claims the path. */
+  fileConflicts?(binding: SessionBinding, workspacePath: string): string | undefined
 }
 interface RuntimeRecord {
   schemaVersion: 1
@@ -958,6 +960,10 @@ export class FusionCoordinator {
       if (path === undefined) return `Path escapes the workspace: ${JSON.stringify(raw)} is outside the project root ${lease.workspaceId}`
       try { workspacePath(lease.workspaceId, path) } catch (error) { return String(error) }
       if (state.currentWorkOrder && !pathAllowed(path, state.currentWorkOrder.allowedPaths)) return 'The edit is outside frozen allowedPaths'
+      if (this.options.fileConflicts) {
+        const conflict = this.options.fileConflicts(binding, path)
+        if (conflict) return conflict
+      }
     }
     if (isShellTool(exec.name)) {
       const args = exec.arguments as { workdir?: string; run_in_background?: boolean }

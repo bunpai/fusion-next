@@ -179,6 +179,28 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
         leadSandbox: config.leadSandbox, workerPolicy: config.workerPolicy,
         onPhysicalRouteSelected: (agentId, route) => appliedPhysicalRoutes.set(agentId, route),
         onTaskEvent: (taskId, type, payload) => { try { shadow().handle(taskId, type, payload) } catch { /* shadow is non-fatal */ } },
+        // S19 cross-branch write conflicts: a path claimed by another run's open
+        // assignment (journaled by the shadow) is denied at the write-lease gate.
+        fileConflicts: (binding, path) => {
+          try {
+            if (!lifecycleManager) {
+              migrateFusionV2(fusionDatabase)
+              lifecycleManager = openRunManager(fusionDatabase)
+            }
+            const parent = store.load(binding.taskId)?.parent
+            if (typeof parent !== 'string' || parent.length === 0) return undefined
+            const runId = `fusion-run-${parent}`
+            for (const assignment of Object.values(lifecycleManager.getState().assignments)) {
+              if (assignment.status !== 'OPEN' && assignment.status !== 'TAKEN_OVER') continue
+              if (String(assignment.runId) === runId) continue
+              for (const claim of assignment.claimedPaths) {
+                const covered = claim === path || (claim.endsWith('/') ? path.startsWith(claim) : path.startsWith(`${claim}/`))
+                if (covered) return `FUSION_FILE_CONFLICT: ${path} is claimed by assignment ${assignment.assignmentId} on a sibling branch (${assignment.runId}); coordinate through the Lead instead of writing there`
+              }
+            }
+          } catch { /* a claim-lookup failure must not silently widen writes */ }
+          return undefined
+        },
         resumeAuthorization: binding => needsBudget(binding.profile) ? budget.check(effectiveRoutes(binding)).authorizationId : 'native-account',
         authorizeRequest: (_agent, binding) => {
           if (!needsBudget(binding.profile)) return

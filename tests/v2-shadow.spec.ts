@@ -119,6 +119,30 @@ describe('V2Shadow', () => {
     } finally { manager.close() }
   })
 
+  it('journals file claims so a sibling run claim is rejected', () => {
+    const file = path('db.sqlite')
+    migrateFusionV2(file)
+    const manager = openRunManager(file)
+    try {
+      seeded(manager)
+      const shadow = new V2Shadow(manager, storeStub(), profileStub)
+      shadow.handle('task-1' as TaskId, 'work-order/prepared', { order: workOrder(), reservedChild: 'child-1' })
+      expect(manager.getState().assignments['wo-wo-1']!.claimedPaths).toEqual(['src/', 'tests/'])
+
+      // A second run on a fork sibling claims the same prefix → rejected by the reducer.
+      const RUN2 = FusionRunId('fusion-run-session-2')
+      manager.append(event({ type: 'RUN_CREATED', runId: RUN2, hostSessionId: 'session-2',
+        taskId: 'task-2', budgetId: 'budget-2', mode: 'DIRECT', branchId: 'branch-2' }, 'e-3'), 0)
+      manager.append(event({ type: 'RUN_ACTIVATED', runId: RUN2, hostSessionId: 'session-2' }, 'e-4'), 1)
+      const shadow2 = new V2Shadow(manager, {
+        load: (id: TaskId) => id === 'task-2' ? { parent: 'session-2' } : undefined,
+      } as unknown as SqliteFusionStore, profileStub)
+      expect(() => shadow2.handle('task-2' as TaskId, 'work-order/prepared', { order: workOrder(), reservedChild: 'child-2' })).not.toThrow()
+      // The overlapping claim was rejected — only the original claim stands.
+      expect(manager.getState().assignments['wo-wo-1']!.claimedPaths).toEqual(['src/', 'tests/'])
+    } finally { manager.close() }
+  })
+
   it('shadow failures never throw to the caller and unknown events are ignored', () => {
     const file = path('db.sqlite')
     migrateFusionV2(file)
