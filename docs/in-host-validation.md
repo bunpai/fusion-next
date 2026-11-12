@@ -43,9 +43,21 @@
 | Mid-run 切换中的 NativeContextGuard 暂停 → 该轮 turn blocked | 观察到一次（物理→Fusion 切换时 turn/end blocked），来源是原生 context guard 而非 Fusion 代码；S04 语义仍正确（随后 turn 恢复） |
 | 双 Host 版本验收 | 0.2.0-rc.2 Host 检出不可用；当前仅验证 0.2.2-rc.1 单版本 |
 | ~~token 计量重复~~ 已排除 | 投影 `tokenUsage` totals = 各 turn 单条 usage 之和（13508/220/162176 精确匹配）— 委托物理调用不产生第二条计量记录，无重复 |
-| Fork/分支（S08–S13） | **部分验证**：S09 Fusion fork 独立 Run（子 session-472d9309 → 独立 run RUN_CREATED+RUN_ACTIVATED rev2）+ S12 双分支并发（父 run 保持 ACTIVE）+ 子会话真实 turn（回复"分支"）已实证；缺口：SESSION_FORKED/血缘未桥接进 v2 journal（fork seam 未接 Host fork 事件，C03 仅单元层覆盖）、S13 失败隔离、S14 分支切换、S19 写冲突、S20 事件隔离未测 |
+| Fork/分支（S08–S20） | **验证**：S09 独立 Run、S12 并发、S13 失败隔离、S14 分支模型迁移、S20 事件不泄漏全部实证（见下表）；S19 写冲突 = Host 集成缺口（插件未桥接写租约）。残余缺口：SESSION_FORKED 血缘未桥接进 v2 journal（本版本 session/list 不暴露父子关系） |
 | ~~发布级三臂基准~~ | 已执行（有界微任务集）：direct 15/15、fusion-next 15/15、fusion-fixed 0/5 — 见 `docs/benchmark-run.md`；未达 §15 隐藏任务集规模 |
 
 ## 结论
 
 0.2.2-rc.1 单版本下，Fusion Next 插件可加载、可配置、可选中、可完成真实 Lead 往返（含标题辅助请求），v2 事件日志记录激活/挂起/恢复/重启持久化的完整生命周期。**不能宣称 Full Implementation Complete**：双版本验收与发布级基准仍缺宿主与环境。
+
+
+### 分支案例（fork 后，2026-11-12 补验）
+
+| 案例 | 结果 | 证据 |
+|---|---|---|
+| S09 fork 独立 Run | ✅ | 子会话 `fusion-run-session-472d9309` 独立 RUN_CREATED+RUN_ACTIVATED，父 run 保持 RUNNING |
+| S12 双分支并发 | ✅ | 父子分支各自完成真实 turn（父 turn/end×7 completed，子 turn/end×6 completed） |
+| S13 一分支失败另一分支继续 | ✅ | 子分支 minimax-m3/mimo-v2.6-pro 连续 turn/end reason error（cpa 400 model_not_found）；父分支同期间 turn/end×2 completed，父 run 保持 RUNNING rev2 |
+| S14 分支运行中模型迁移 | ✅ | 子分支 selectModel cpa/devin/swe-2-flash → 仅该分支 RUN_SUSPEND_REQUESTED→RUN_SUSPENDED（rev4），父分支 RUNNING 不变 |
+| S19 双分支相同路径写入冲突 | ⚠️ Host 集成缺口 | v2 journal 的 `ASSIGNMENT_FILES_CLAIMED` 冲突检测是库级机制（H01，测试覆盖）；插件运行时未桥接写租约——分支写文件走 Host 原生工具，不进 Fusion 调度器，冲突只能由 Host 自身机制兜底 |
+| S20 forkPointSeq 后的事件不得泄漏 | ✅ | fork 后父会话新 turn（"父转"×3 matches）完成，子会话 journal 行数不变（71→71）且 0 匹配父文本 |

@@ -1,36 +1,34 @@
-# 三臂基准 — In-Host 执行（2026-11-12）
+# 三臂基准 — 隔离 Host 内真实 Provider 执行
 
-范围：隔离 DSH NEXT 2.0.22-next（0.2.2-rc.1）测试实例 `~/dsh/dsh-test-home`，真实 cpa Provider 往返。原始聚合：`benchmark/baselines/three-arm-in-host-20261112.json`（由 session 日志重算，可审计）。
+**环境**：隔离测试实例（`DSH_HOME=~/dsh/dsh-test-home`，DSH NEXT 2.0.22-next / 0.2.2-rc.1 内核），cpa Provider（ai.8823823.xyz/v1），凭据经实例 `.credentials.yaml` 注入。
+**驱动**：页内 `fetch api/session/create|selectModel|prompt`（api/* 不接受 curl，需 piggyback 页面认证）；指标从 session journal（zstd）重算。
+**产物**：`benchmark/baselines/three-arm-in-host-scaled-20261112.json`（144 条逐轮记录），早轮微任务版 `three-arm-in-host-20261112.json`。
 
-## 设置
+## 规模化执行（24 任务 × 3 种子，2026-11-12）
 
-- 任务集：5 个确定性短任务（乘法/加法/倒序/求和/len），每臂每 seed 一轮，3 seeds。
-- 臂定义：
-  - `direct`：物理模型 cpa/devin/swe-2（白名单中最强）。
-  - `fusion-next`：本仓库 bundle，Lead=cpa/devin/swe-2，Worker=cpa/devin/swe-2-flash（lifecycleBridge operator-attested）。
-  - `fusion-fixed`：原版 dsh-model-fusion@0.2.11 bundle（生产装机版）。
-- 指标来源：`session.v4.jsonl.zstd` 日志的 turn/start→turn/end 时间戳、assistant/message 文本、stream chunk usage、replayState 物理路由。
-- 驱动：in-page `api/session/create|selectModel|prompt` RPC（与 GUI 同一通道）。
+任务集：24 个确定性微型任务（6 算术 / 6 字符串 / 6 代码 / 6 多步推理），每臂每种子独立会话。
 
-## 结果
+| 臂 | 模型 | 完成率 | 正确率 | P50 延迟 | P95 延迟 | 平均输入 tok | 平均输出 tok | 平均缓存读 |
+|---|---|---|---|---|---|---|---|---|
+| direct | cpa/devin/swe-2 | 72/72 = 100% | 100% | 5056ms | 7578ms | 1831 | 68 | 31461 |
+| fusion-next | lead swe-2 + worker swe-2-flash | 72/72 = 100% | 100% | 5066ms | 10100ms | 1485 | 51 | 34928 |
+| fusion-fixed | 装机版 dsh-model-fusion@0.2.11 | 0/5 = 0% | — | — | — | — | — | — |
 
-| 臂 | runs×turns | 成功率 | P50 延迟 | P95 延迟 | mean out tok | mean in tok | 物理路由 |
-|---|---|---|---|---|---|---|---|
-| direct | 3×15 | **15/15 = 100%** | 4005ms | 11700ms | 55 | 5362 | cpa/devin/swe-2 |
-| fusion-next | 3×15 | **15/15 = 100%** | 3300ms | 7682ms | 44 | 8590 | cpa/devin/swe-2（经虚拟提供者委派 Lead） |
-| fusion-fixed | 1×5 | **0/5 = 0%** | 5ms（全部即时失败） | 6ms | — | — | 无（未达 LLM 调用） |
+- **fusion-fixed 基线**：全部 turn 即死 `scope.tools.presentAs is not a function`（0.2.2-rc.1 宿主移除了该 API；正是本会话 ba02242 修复的兼容缺陷）。这是真实版本偏斜基线，不是测试 bug。
+- **P50 持平**（5056 vs 5066ms，Fusion 虚拟提供者委托路径无显著开销）；**P95 偏高**（10100 vs 7578ms），长尾来自 fusion-next 臂个别 12.6s 轮次（首轮冷启动 + 委托链路额外一步）。
+- **fusion-next 输入 token 更低**（1485 vs 1831）：Fusion 上下文注入与直发路径的系统提示词结构不同；输出亦更短。
+- **正确性按期望子串判分**：24 个答案确定性任务全部命中。
 
-`fusion-fixed` 全部 5 个 turn 以 `scope.tools.presentAs is not a function` 立即失败 —— 正是本次会话修复的 0.2.2-rc.1 兼容缺陷；这是真实且可复现的基线结果，不是测量噪声。
+## 早轮微任务执行（5 任务 × 3 种子，仅作基线对比）
 
-## 读数
+| 臂 | 成功率 | P50 |
+|---|---|---|
+| direct | 15/15 | 4005ms |
+| fusion-next | 15/15 | 3300ms |
+| fusion-fixed | 0/5 | 5ms 即死 |
 
-- 本 Host 版本上，Fusion Next 成功率与强 Direct 持平（100% vs 100%，满足 §15 "success ≥ strong baseline" 的定性方向），P50 延迟不劣化（3300ms ≤ 1.5×4005ms）。
-- fusion-next mean in-tokens 高于 direct（8.6K vs 5.4K）：Fusion 会话注入了 Fusion 工具/上下文（约 +3.2K tok/turn），成本项如实记录。
-- 旧插件在本 Host 版本完全不可用 → “既有 Fusion”臂无法贡献性能基线，仅提供 0% 兼容基线。
+## 诚实边界（对照 §15 发表门槛）
 
-## 局限（诚实声明）
-
-- 任务集为 5 个微任务 ×3 seeds，非 §15 的“隐藏验证任务集”；规模不足以支撑 −30% 成本/99% 恢复率结论，仅证明机制端到端成立。
-- fusion-fixed 仅 1 seed（失败模式确定性，多 seed 无信息量）。
-- direct/fusion-next 使用同一物理 Lead 模型，路由差异未体现（白名单模型有限）。
-- token 计量无重复（2026-11-12 证据修正此前推测）：session 投影 `tokenUsage` totals 精确等于每 turn 单条 usage 之和（uncachedInput 13508 / output 220 / cacheRead 162176）— 委派的物理调用不产生第二条计量记录。
+- 这 **不是** §15 隐藏任务集：24 个公开微任务 vs 发表要求的隐藏验证集；成功率 ≥ 强 Direct 在该任务集上已实测成立，成本 −30% 与恢复率 ≥99% 需要用计费数据与恢复场景另行测算（本集无成本维度，无恢复故障注入）。
+- 单版本验证（0.2.2-rc.1）；0.2.0-rc.2 双版本验收按用户决定放弃。
+- fusion-fixed 臂仅 5 轮（确认即死后即停，不再烧配额）。
