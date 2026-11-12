@@ -42,7 +42,8 @@
 在隔离的 `~/dsh/dsh-test-home` DSH_HOME 上运行 DSH NEXT 2.0.22-next（0.2.2-rc.1 内核）验证：
 
 - 插件加载、Fusion · 自动模型菜单、configure API（revision CAS）、v2 迁移、激活缝（fail-closed 与 operator-attested 两态）、真实 Fusion turn（回复 + 标题经虚拟提供者）、S03/S04 切出挂起+切回恢复 v2 事件、真实重启后 20 个 run 持久化与新会话激活 — **全部在 Host 内实证**。
-- 单元层记录过的宿主兼容修复（presentAs 特征检测、restrict fail-closed、agent/request 路由改写禁令、turn/start 防重入 select、虚拟提供者 stream 委托）——见 docs/in-host-validation.md §“兼容问题”。
+- **Worker 委派全链路（2026-11-12 实证）**：Lead `fusion_delegate` → work-order 派生 → 独立 Worker 会话（cpa/devin-swe-2-flash）→ 嵌套 native 检查（修复后的 batch API）→ Worker `fusion_submit_result` → Lead `fusion_review_result` accept → task COMPLETED，交付文件真实落盘且单测通过。
+- 单元层记录过的宿主兼容修复（presentAs 特征检测、restrict fail-closed、agent/request 路由改写禁令、turn/start 防重入 select、虚拟提供者 stream 委托、tools.execute batch API 兼容 + #nestedChecks parent 匹配放宽）——见 docs/in-host-validation.md §“兼容问题”。
 
 ### 2.1 test:host 门禁已跑通（版本偏斜如实记录）
 
