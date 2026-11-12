@@ -365,20 +365,34 @@ async function invokeCheck(input: CheckInput, check: FrozenCheck) {
   const key = `check-invocation:${order.taskId}:${callId}`
   store.writeDocument(key, 0, { check, evidence: started })
   const remove = input.authorizeNested(callId)
-  let result
+  const checkArgs = { command: check.definition.command, description: check.definition.description,
+    workdir: root, ...(input.nativeTimeout && check.definition.timeoutSeconds === undefined ? {} : { timeoutMs: (check.definition.timeoutSeconds ?? order.policy.commandMaxSeconds) * 1000 }), run_in_background: false }
+  let result: { additionalContexts?: unknown[]; value?: unknown; isError?: boolean; content?: unknown }
   try {
-    result = await ctx.tools.execute({ callId, rootCallId: exec.rootCallId, parent: exec.token,
-      name: nativeShellTool, arguments: { command: check.definition.command, description: check.definition.description,
-        workdir: root, ...(input.nativeTimeout && check.definition.timeoutSeconds === undefined ? {} : { timeoutMs: (check.definition.timeoutSeconds ?? order.policy.commandMaxSeconds) * 1000 }), run_in_background: false },
-      agent: exec.agent, signal: exec.signal })
+    // SDK compat: newer Hosts expose ctx.tools.execute as a BATCH entry
+    // ({calls:[{id,name,arguments}]}); older SDKs accepted a single call
+    // ({callId,name,arguments}). Passing both lets either runtime find the
+    // fields it reads.
+    const raw = await ctx.tools.execute({ callId, rootCallId: exec.rootCallId, parent: exec.token,
+      calls: [{ id: callId, name: nativeShellTool, arguments: JSON.stringify(checkArgs) }],
+      name: nativeShellTool, arguments: checkArgs,
+      agent: exec.agent, signal: exec.signal } as Parameters<typeof ctx.tools.execute>[0])
+    // Batch runtimes settle per-call results under .results[]; single-call
+    // runtimes return the result object itself.
+    const settled = (raw && typeof raw === 'object' && 'results' in raw && Array.isArray((raw as { results?: unknown }).results)
+      ? (raw as { results: { callId: string; result: unknown }[] }).results.find((entry) => entry.callId === callId)?.result
+      : raw) as typeof result
+    result = settled
   } catch (error) {
+    const show = (e: unknown, depth: number): string => e instanceof Error ? `${e.name}: ${e.message}\n${e.stack ?? ''}${depth < 5 && 'cause' in e && e.cause ? '\n--cause--> ' + show(e.cause, depth + 1) : ''}` : String(e)
+    console.error('[fusion-check-error]', show(error, 0))
     const evidence: ToolEvidence = { ...started, state: 'outcome-unknown', endedAt: new Date().toISOString(),
       stderr: store.putArtifact(order.taskId, Buffer.from(String(error)), 'text/plain') }
     store.writeDocument(key, 1, { check, evidence })
     input.uncertain?.(evidence)
     throw error
   } finally { remove() }
-  for (const context of result.additionalContexts ?? []) exec.deferContext(context)
+  for (const context of result.additionalContexts ?? []) exec.deferContext(context as Parameters<typeof exec.deferContext>[0])
   const raw = record(result.value)
   const stdout = record(raw?.stdout), stderr = record(raw?.stderr)
   const nativeForeground = !result.isError && raw?.kind === 'foreground'

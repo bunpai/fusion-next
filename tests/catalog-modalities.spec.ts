@@ -3,18 +3,20 @@ import { FUSION_PROVIDER, FusionCatalogAdapter, FUSION_MODEL } from '../src/host
 import { savedLeadRoute } from '../src/host/settings.js'
 
 describe('FusionCatalogAdapter input modalities', () => {
-  it('declares text-only until a Lead modalities resolver is configured', async () => {
+  it('hides the pseudo-model from the catalog while still resolving it for legacy selections', async () => {
     const unconfigured = new FusionCatalogAdapter()
-    expect(await unconfigured.listModels(FUSION_PROVIDER)).toMatchObject({ 0: { id: FUSION_MODEL, inputModalities: ['text'] } })
-    const unresolved = new FusionCatalogAdapter(async () => undefined)
-    expect(await unresolved.listModels(FUSION_PROVIDER)).toMatchObject({ 0: { inputModalities: ['text'] } })
+    expect(await unconfigured.listModels(FUSION_PROVIDER)).toEqual([])
+    const resolved = await unconfigured.resolveModel(FUSION_PROVIDER, FUSION_MODEL)
+    expect(resolved).toMatchObject({ id: FUSION_MODEL, inputModalities: ['text'] })
   })
 
   it('admits exactly what the configured Lead admits, unioned with text', async () => {
     const imageLead = new FusionCatalogAdapter(async () => ['image', 'text'])
-    expect(await imageLead.listModels(FUSION_PROVIDER)).toMatchObject({ 0: { inputModalities: ['text', 'image'] } })
+    const imageResolved = await imageLead.resolveModel(FUSION_PROVIDER, FUSION_MODEL)
+    expect(imageResolved).toMatchObject({ inputModalities: ['text', 'image'] })
     const textLead = new FusionCatalogAdapter(async () => ['text'])
-    expect(await textLead.listModels(FUSION_PROVIDER)).toMatchObject({ 0: { inputModalities: ['text'] } })
+    const textResolved = await textLead.resolveModel(FUSION_PROVIDER, FUSION_MODEL)
+    expect(textResolved).toMatchObject({ inputModalities: ['text'] })
   })
 
   it('resolves the exact Fusion selection through the same declaration', async () => {

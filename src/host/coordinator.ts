@@ -957,7 +957,7 @@ export class FusionCoordinator {
     if (enforcedWorkflow(binding) && role === 'lead' && !isRead(exec) && !FUSION_TOOLS.has(exec.name)
       && (!adaptiveWorkflow(binding) || state.currentWorkOrder)) {
       const nested = this.#nestedChecks.get(exec.callId)
-      const check = isShellTool(exec.name) && nested?.agent === exec.agent && nested.parent === exec.parent
+      const check = isShellTool(exec.name) && nested?.agent === exec.agent && (exec.parent === undefined || nested.parent === exec.parent)
       const takeover = state.currentWorkOrder && this.#runtime(binding.taskId).takeover
       if (!check && !takeover) return this.workflow.denyEffect(binding)
     }
@@ -1003,7 +1003,7 @@ export class FusionCoordinator {
       }
       const nested = this.#nestedChecks.get(exec.callId)
       if (role === 'lead' && state.intent === 'DELEGATE' && !this.#runtime(binding.taskId).takeover
-        && (!nested || nested.agent !== exec.agent || nested.parent !== exec.parent)) {
+        && (!nested || nested.agent !== exec.agent || (exec.parent !== undefined && nested.parent !== exec.parent))) {
         return 'Lead is reviewing; use the native acceptance checks or request takeover'
       }
     }
@@ -1078,7 +1078,7 @@ export class FusionCoordinator {
     // would dead-lock a sandboxed Lead that cannot even reach fusion_delegate.
     if (isRead(exec) || FUSION_TOOLS.has(exec.name) || exec.name === 'run_code') return false
     const nested = this.#nestedChecks.get(exec.callId)
-    if (isShellTool(exec.name) && nested && nested.agent === exec.agent && nested.parent === exec.parent) return false
+    if (isShellTool(exec.name) && nested && nested.agent === exec.agent && (exec.parent === undefined || nested.parent === exec.parent)) return false
     if (isShellTool(exec.name) && (exec.arguments as { run_in_background?: unknown }).run_in_background === true) {
       this.workflow.denyEffect(binding)
       return 'FUSION_LEAD_READ_ONLY: the Lead runs only short foreground inspection commands. Test runs and long commands belong to the Sidekick: delegate them.'
@@ -2122,7 +2122,13 @@ export class FusionCoordinator {
         block: { type: 'boolean', description: 'Default true. False permits read-only Lead work while the Worker retains write ownership.' },
         checks: { type: 'array', required: true, items: checkItem, description: 'Acceptance commands the Host runs after the Worker reports; [] for review-only work.' },
         requirements: { ...optionalStringList, description: 'The user\'s hard requirements as exact quotes of their messages (required behaviour, names, strings, formats, acceptance criteria), 1-20 items. The Host verifies each quote against the user\'s words, freezes them for the Sidekick, and your accept must give one verdict per item.' } }, output: textOutput,
-      execute: (args, exec) => this.delegate(agent, { ...args, constraints: args.constraints ?? [], checks: normalizeChecks(args.checks), requirements: args.requirements ?? [] }, exec) })))
+      execute: async (args, exec) => {
+        try { return await this.delegate(agent, { ...args, constraints: args.constraints ?? [], checks: normalizeChecks(args.checks), requirements: args.requirements ?? [] }, exec) }
+        catch (error) {
+          const show = (e: unknown, depth: number): string => e instanceof Error ? `${e.name}: ${e.message}\n${e.stack ?? ''}${depth < 5 && 'cause' in e && e.cause ? '\n--cause--> ' + show(e.cause, depth + 1) : ''}` : String(e)
+          console.error('[fusion-delegate-error]', show(error, 0)); throw error
+        }
+      } })))
     dispose.push(scope.tools.register(defineTool({ name: 'fusion_rework', description: 'Send specific Lead-authored feedback to the same persistent Worker, including advancing a planned implementation stage. Before a report this continues unfinished work within the Worker-step budget; after a report it consumes a rework round. Active generation and native job waits can be replaced without restarting a tracked job; an active foreground tool finishes before the new brief. Keep durable requirements unchanged. Do not suggest files outside the frozen allowed paths unless you add them with addAllowedPaths.',
       // Orchestration includes human approval waits; leaf tools retain their
       // resource deadlines, but the wait itself must not expire.
