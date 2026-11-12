@@ -74,6 +74,11 @@ export interface CoordinatorOptions {
   resumeAuthorization?(binding: SessionBinding): string
   /** Relays routes the scope layer applied via agent.model.select() to the selection listener. */
   onPhysicalRouteSelected?(agentId: string, route: { provider: string; model: string }): void
+  /** enforced-v3 only; operator opt-out: false makes the Lead a normal model (no tool ceiling, no read-only gate). */
+  leadSandbox?: boolean
+  /** 'inherit' (default): Worker inherits the parent session's full toolset (DSH delegation semantics).
+   *  'restricted': apply the configured workerTools ceiling at start-time and execution. */
+  workerPolicy?: 'inherit' | 'restricted'
   reserveRequest?(request: GenerateOptions, binding: SessionBinding, role: Role): void
   leaseRoot?: string
   maxWorkerSteps?: number
@@ -379,7 +384,7 @@ export class FusionCoordinator {
       onPhysicalRouteSelected: (agentId, route) => this.options.onPhysicalRouteSelected?.(agentId, route),
       beforeRequest: (agent, turn, step, binding, role) => {
         this.options.authorizeRequest(agent, binding, role, turn, step)
-        this.roleSandbox.ensure(agent, binding, role, role === 'lead' && this.#leadWriter(binding, agent))
+        this.roleSandbox.ensure(agent, binding, role, role === 'lead' && (this.#leadWriter(binding, agent) || this.options.leadSandbox === false))
         const state = this.state(binding.taskId)
         if (role === 'lead' && state.activeReviewTicket) captureNativeReviewRequest(store, agent, turn, step, state.activeReviewTicket)
         if (role === 'worker') {
@@ -395,6 +400,10 @@ export class FusionCoordinator {
         if (role === 'worker') {
           if (state.currentWorkOrder?.mode === 'text') return []
           if (state.currentWorkOrder?.mode === 'explore') return this.options.workerTools.filter(name => READ_TOOLS.has(name))
+          // workerPolicy 'inherit' (default): the Worker gets the same permission surface as
+          // any other agent — undefined = no toolset ceiling, mirroring the Host's own
+          // delegation semantics (captureDelegatedPolicyOverrides never narrows tools).
+          if (this.options.workerPolicy !== 'restricted') return undefined
           // Implement mode. 0.2.0 keeps `undefined`: `startContinuable` still
           // sends `toolFilter`, and returning an array here would also call
           // `presentAs('native')` in NativeFusionScopes. 0.2.1 has no start-time
@@ -405,6 +414,8 @@ export class FusionCoordinator {
           return hasStartActivation(this.ctx.subagents) ? [...this.options.workerTools] : undefined
         }
         const lease = this.#held.get(binding.taskId)
+        // leadSandbox=false (operator opt-out): the Lead is a normal model — full toolset, no separation.
+        if (roleSeparated(binding) && this.options.leadSandbox === false) return undefined
         if (roleSeparated(binding)) return this.#leadWriter(binding, agent) ? undefined : this.#separatedLeadTools(state, binding)
         if (enforcedWorkflow(binding)) {
           if (adaptiveWorkflow(binding) && !state.currentWorkOrder) return undefined
@@ -725,7 +736,7 @@ export class FusionCoordinator {
       this.#release(binding.taskId)
       this.scopes.detach(agent)
       this.bindings.clear(agent.id)
-      if (roleSeparated(binding)) this.roleSandbox.restore(agent)
+      if (roleSeparated(binding) && this.options.leadSandbox !== false) this.roleSandbox.restore(agent)
     })
   }
 
@@ -898,16 +909,18 @@ export class FusionCoordinator {
       && !isRead(exec) && exec.name !== 'fusion_submit_result') {
       return 'Exploration is read-only: use file search/read tools and fusion_submit_result with 1–12 source ranges (omit them only when the directory has no entries on disk and you state that the scope is empty); no shell, edits or run_code'
     }
-    // The Sidekick's ceiling also holds at execution. A tool another plugin registers on the
-    // Worker itself survives both the 0.2.0 start-time toolFilter and the 0.2.1 scope restriction.
-    if (role === 'worker' && !this.options.workerTools.includes(exec.name) && !WORKER_FUSION_TOOLS.has(exec.name)) {
+    // The Sidekick's ceiling also holds at execution — only when workerPolicy is 'restricted'
+    // (inherit policy: the Worker uses the same toolset as any other agent, matching the Host's
+    // delegation semantics where a subagent inherits the parent's permission surface).
+    if (role === 'worker' && this.options.workerPolicy === 'restricted'
+      && !this.options.workerTools.includes(exec.name) && !WORKER_FUSION_TOOLS.has(exec.name)) {
       return `${exec.name} is outside the Sidekick's configured tools (${this.options.workerTools.join(', ')})`
     }
     if (binding.profile.interactionMode === 'model-like' && !isRead(exec)) {
       const restore = this.onDemand.blocked(exec.agent, binding)
       if (restore) return restore
     }
-    if (roleSeparated(binding) && role === 'lead') {
+    if (roleSeparated(binding) && role === 'lead' && this.options.leadSandbox !== false) {
       const separated = this.#separatedLeadGuard(exec, binding)
       if (separated !== false) return separated
     }
@@ -1026,7 +1039,10 @@ export class FusionCoordinator {
     if (exec.name === 'fusion_submit_result' || exec.name === 'fusion_finish_direct') {
       return 'FUSION_LEAD_READ_ONLY: in this Fusion mode the Lead never writes. Send corrections to the same Sidekick with fusion_rework.'
     }
-    if (isRead(exec) || FUSION_TOOLS.has(exec.name)) return false
+    // run_code wraps every tool on hosts that publish the code-mode entry point; the nested calls it makes
+    // re-enter this gate individually (nested shell still hits leadShellProblem), so denying the outer call
+    // would dead-lock a sandboxed Lead that cannot even reach fusion_delegate.
+    if (isRead(exec) || FUSION_TOOLS.has(exec.name) || exec.name === 'run_code') return false
     const nested = this.#nestedChecks.get(exec.callId)
     if (isShellTool(exec.name) && nested && nested.agent === exec.agent && nested.parent === exec.parent) return false
     if (isShellTool(exec.name) && (exec.arguments as { run_in_background?: unknown }).run_in_background === true) {

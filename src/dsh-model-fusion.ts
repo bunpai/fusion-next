@@ -39,13 +39,15 @@ export * from './index.js'
 
 export const name = 'dsh-model-fusion'
 export const inject = ['agents', 'sessions', 'llm', 'tools', 'subagents', 'systemPrompt', 'webServer', 'sessionController', 'sessionQuery', 'commands', 'agentDefaultModel', 'tokenMeter']
-export interface Config { profilePath?: string; authorizationPath?: string; databasePath?: string; workerTools?: string[]; lifecycleBridge?: boolean; hostSdkVersion?: string; fusionDatabasePath?: string }
+export interface Config { profilePath?: string; authorizationPath?: string; databasePath?: string; workerTools?: string[]; lifecycleBridge?: boolean; hostSdkVersion?: string; fusionDatabasePath?: string; leadSandbox?: boolean; workerPolicy?: 'inherit' | 'restricted' }
 const defaultWorkerTools = [nativeShellTool, 'read', 'write', 'edit', 'glob', 'grep', 'job_output', 'job_kill']
 // Schemastery otherwise normalizes an omitted array to [], bypassing ?? below.
 // An explicitly empty list must remain empty, so the default belongs in the schema.
 export const Config: z<Config> = z.object({ profilePath: z.string(), authorizationPath: z.string(), databasePath: z.string(),
   workerTools: z.array(z.string()).default(defaultWorkerTools),
-  lifecycleBridge: z.boolean().default(false), hostSdkVersion: z.string(), fusionDatabasePath: z.string() })
+  lifecycleBridge: z.boolean().default(false), hostSdkVersion: z.string(), fusionDatabasePath: z.string(),
+  leadSandbox: z.boolean().default(true),
+  workerPolicy: z.union([z.const('inherit' as const), z.const('restricted' as const)]).default('inherit' as const) })
 
 export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   const dshHome = process.env.DSH_HOME || join(homedir(), '.dsh')
@@ -163,6 +165,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     creating = (async () => {
       const profile = frozen ?? await configuredProfile()
       runtime = new FusionCoordinator(ctx, store, { profile, workerTools: config.workerTools ?? defaultWorkerTools,
+        leadSandbox: config.leadSandbox, workerPolicy: config.workerPolicy,
         onPhysicalRouteSelected: (agentId, route) => appliedPhysicalRoutes.set(agentId, route),
         resumeAuthorization: binding => needsBudget(binding.profile) ? budget.check(effectiveRoutes(binding)).authorizationId : 'native-account',
         authorizeRequest: (_agent, binding) => {
