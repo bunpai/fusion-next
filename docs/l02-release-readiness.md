@@ -31,7 +31,7 @@
 |---|---|---|
 | `build` 门禁 | scripts/build.mjs | DSHX_HARNESS 检出缺 `tools/dshx/src/client-build.js`，且要求 Host 0.2.0-rc.2（实有 0.1.6-alpha.2） |
 | 双 Host 版本验收（rc.2/rc.5） | §15 | 需真实 Desktop Host 两版本运行 |
-| 三臂基准（强 Direct / 既有 Fusion / Fusion Next）与多 seed | §15 | 需真实 Provider 与预算受控执行 |
+| 三臂基准（强 Direct / 既有 Fusion / Fusion Next）与多 seed | §15 | **部分验证** — 2026-11-12 隔离实例内真实执行：direct 3×5=100%、fusion-next 3×5=100%、fusion-fixed 0/5（presentAs 兼容缺陷，真实基线）；任务集未达隐藏任务集规模。见 `docs/benchmark-run.md` + `benchmark/baselines/three-arm-in-host-20261112.json` |
 | 隐藏验证任务集、成功率/成本/恢复率指标 | §15 | 同上 |
 | Provider 故障注入（429/超时/取消）真实链路 | §15 | 需真实 Provider |
 | DSH Web GUI 操作回归（S01–S20 全部场景） | §14 | 已在单版本 Host GUI 验证 S01/S02/S03/S04/S06/S15（见 §2.0）；S05–S20 部分子集与 fork/分支 GUI 流未覆盖 |
@@ -63,4 +63,4 @@
 
 ## 3. 发布判定
 
-**不能**依据计划 §18 宣告 "Full Implementation Complete"：代码与本地测试齐备（§13 A01–L02 全部史诗均有实现与测试），但 §15 双版本 Host 验收与真实基准未执行。对外交付措辞：**实现完成、Host 级验证待环境**。
+**不能**依据计划 §18 宣告 "Full Implementation Complete"：代码与本地测试齐备（§13 A01–L02 全部史诗均有实现与测试），单版本（0.2.2-rc.1）Host 内已实测关键链路。剩余未验证：§15 双版本 Host 验收（用户决定放弃该兼容项，仅当前版本验证）、§15 隐藏任务集规模基准、Token 计量去重。对外交付措辞：**实现完成、单版本 Host 验证通过、规模化基准与计量去重待续**。

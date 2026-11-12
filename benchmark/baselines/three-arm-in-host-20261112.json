@@ -1,0 +1,61 @@
+{
+ "direct": {
+  "runs": 3,
+  "turns": 15,
+  "success": 15,
+  "successRate": 1.0,
+  "p50LatencyMs": 4005,
+  "p95LatencyMs": 11700,
+  "meanOutTokens": 55.0,
+  "meanInTokens": 5361.6,
+  "physicalRoutes": [
+   "cpa/devin/swe-2"
+  ],
+  "errors": [],
+  "sessions": [
+   "session-51d1f569-3703-4992-b7a9-59ac4f450685",
+   "session-9cd44d6e-ad43-4838-a55b-88d9a5b9afa7",
+   "session-59f1eebc-683e-4126-8e40-71641a9073ff"
+  ]
+ },
+ "fusion-next": {
+  "runs": 3,
+  "turns": 15,
+  "success": 15,
+  "successRate": 1.0,
+  "p50LatencyMs": 3300,
+  "p95LatencyMs": 7682,
+  "meanOutTokens": 40.6,
+  "meanInTokens": 8589.6,
+  "physicalRoutes": [
+   "cpa/devin/swe-2"
+  ],
+  "errors": [],
+  "sessions": [
+   "session-c7db4574-240c-41a7-8773-6f424828c0d4",
+   "session-43fe6ae5-a59a-4c29-b92f-1c451b701ae1",
+   "session-b58e3670-0fac-4e87-af72-0c8644b90709"
+  ]
+ },
+ "fusion-fixed": {
+  "runs": 1,
+  "turns": 5,
+  "success": 0,
+  "successRate": 0.0,
+  "p50LatencyMs": 5,
+  "p95LatencyMs": 6,
+  "meanOutTokens": null,
+  "meanInTokens": null,
+  "physicalRoutes": [
+   "?"
+  ],
+  "errors": [
+   "scope.tools.presentAs is not a function",
+   "scope.tools.presentAs is not a function",
+   "scope.tools.presentAs is not a function"
+  ],
+  "sessions": [
+   "session-b4c20921-064a-417a-a2e9-f6da2eb3908a"
+  ]
+ }
+}
