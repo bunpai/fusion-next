@@ -13,6 +13,8 @@ interface ScopeExpandedPayload { workOrderId: string; added: readonly string[]; 
 interface AcceptanceAmendedPayload { workOrderId: string; reason: string }
 interface ReportSubmittedPayload { operationId: string; report: WorkerReport }
 interface ReviewCompletedPayload { decision: 'accept' | 'rework' | 'needs-decision' | 'REVIEW_INCOMPLETE' }
+interface ChildAcceptedPayload { operationId: string; child: SessionId }
+interface OutcomeUnknownPayload { operationId: string; reason: string }
 
 const digestOfRoute = (route: { provider: string; model: string; reasoningEffort?: string }): string =>
   createHash('sha256').update(JSON.stringify([route.provider, route.model, route.reasoningEffort ?? ''])).digest('hex').slice(0, 16)
@@ -36,6 +38,7 @@ export class V2Shadow {
   private readonly briefs = new Map<string, { objective: string; constraints: string[]; revision: number }>()
   private readonly assignmentsByWorkOrder = new Map<string, string>()
   private readonly workerGenerationByAssignment = new Map<string, string>()
+  private readonly effectsByOperation = new Map<string, string>()
   private readonly leadGenerations = new Set<string>()
   private readonly warned = new Set<string>()
 
@@ -64,6 +67,8 @@ export class V2Shadow {
       case 'work-order/acceptance-amended': return this.acceptanceAmended(taskId, payload as AcceptanceAmendedPayload)
       case 'report/submitted': return this.reportSubmitted(taskId, payload as ReportSubmittedPayload)
       case 'review/completed': return this.reviewCompleted(taskId, payload as ReviewCompletedPayload)
+      case 'child/claimed': return this.effectDispatched(taskId, payload as { operationId: string })
+      case 'effect/outcome-unknown': return this.effectUnresolved(taskId, payload as OutcomeUnknownPayload)
       case 'task/completed': return this.taskCompleted(taskId)
       default: return
     }
@@ -140,6 +145,40 @@ export class V2Shadow {
         assignmentId, paths,
       })
     }
+    // Work orders are external effects: an in-flight worker is an unsettled
+    // effect the recovery plan must surface. IDEMPOTENT modes (explore/text)
+    // may be re-dispatched; implement mode needs verification on outcome loss.
+    const effectId = `fx-${order.operationId}`
+    this.effectsByOperation.set(order.operationId, effectId)
+    const effectClass = order.mode === 'implement' ? 'NEEDS_VERIFICATION' : 'IDEMPOTENT'
+    this.append(runId, `fusion/v2-shadow/${runId}/${effectId}-intent`, 'EFFECT_INTENT_RECORDED', {
+      effectId, generationId: AgentGenerationId(workerGenerationId), toolCallId: String(order.operationId),
+      effectClass,
+      fingerprint: createHash('sha256')
+        .update(JSON.stringify({ tool: 'native-worker', args: order.operationId, target: order.id })).digest('hex'),
+      idempotencyKey: `wo:${order.operationId}`,
+    })
+  }
+
+  private effectDispatched(taskId: TaskId, { operationId }: { operationId: string }): void {
+    const runId = this.runIdFor(taskId), effectId = runId && this.effectsByOperation.get(operationId)
+    if (!runId || !effectId) return
+    this.append(runId, `fusion/v2-shadow/${runId}/${effectId}-dispatched`, 'EFFECT_DISPATCHED', { effectId })
+  }
+
+  private effectSettled(taskId: TaskId, { operationId, report }: ReportSubmittedPayload): void {
+    const runId = this.runIdFor(taskId), effectId = runId && this.effectsByOperation.get(operationId)
+    if (!runId || !effectId) return
+    this.append(runId, `fusion/v2-shadow/${runId}/${effectId}-receipt`, 'EFFECT_RECEIPT_RECORDED', {
+      effectId, receiptRef: `wr-${operationId}`,
+      outcome: report.status === 'completed' ? 'SUCCEEDED' : 'FAILED_KNOWN',
+    })
+  }
+
+  private effectUnresolved(taskId: TaskId, { operationId }: OutcomeUnknownPayload): void {
+    const runId = this.runIdFor(taskId), effectId = runId && this.effectsByOperation.get(operationId)
+    if (!runId || !effectId) return
+    this.append(runId, `fusion/v2-shadow/${runId}/${effectId}-unresolved`, 'EFFECT_UNRESOLVED', { effectId })
   }
 
   private reviseBrief(taskId: TaskId, workOrderId: string, addConstraints: readonly string[]): void {
@@ -175,6 +214,7 @@ export class V2Shadow {
       summary: report.summary, status,
       artifacts: [String(report.changeManifest?.id ?? '')].filter(id => id.length > 0),
     })
+    this.effectSettled(taskId, { operationId, report })
   }
 
   private reviewCompleted(taskId: TaskId, { decision }: ReviewCompletedPayload): void {

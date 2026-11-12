@@ -85,6 +85,7 @@ describe('V2Shadow', () => {
       seeded(manager)
       const shadow = new V2Shadow(manager, storeStub(), profileStub)
       shadow.handle('task-1' as TaskId, 'work-order/prepared', { order: workOrder(), reservedChild: 'child-1' })
+      shadow.handle('task-1' as TaskId, 'child/claimed', { operationId: 'op-1' })
       shadow.handle('task-1' as TaskId, 'report/submitted', {
         operationId: 'op-1',
         report: { schemaVersion: 1, workOrderId: 'wo-1', revision: 1, status: 'completed',
@@ -94,6 +95,9 @@ describe('V2Shadow', () => {
       const report = Object.values(state1.reports).find(r => r.reportId === 'wr-op-1')
       expect(report?.status).toBe('COMPLETED')
       expect(report?.generationId).toBe(`gen-worker-${RUN}-wo-1`)
+      // D01 bridge: the work order is a settled effect in the v2 ledger.
+      expect(state1.effects['fx-op-1']?.state).toBe('SETTLED')
+      expect(state1.effects['fx-op-1']?.resolvedBy).toBe('receipt')
 
       shadow.handle('task-1' as TaskId, 'task/completed', {})
       expect(manager.getState().assignments['wo-wo-1']?.status).toBe('COMPLETED')
