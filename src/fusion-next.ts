@@ -25,7 +25,7 @@ import { BindingRepository, type SessionBinding } from './host/bindings.js'
 import { FusionCoordinator } from './host/coordinator.js'
 import { authorizeConfiguredPair, NativeRequestBudget } from './host/native-budget.js'
 import { json, readJson, trustedRequest } from './host/http.js'
-import { readFusionStatusAsync } from './host/status.js'
+import { readFusionStatus, readFusionStatusAsync } from './host/status.js'
 import { readHistoricalFusionActivity } from './host/native-activity.js'
 import { nativeShellTool } from './host/shell.js'
 import { migrateFusionV2 } from './persistence/index.js'
@@ -323,6 +323,20 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
           const bound = sid ? bindings.read(sid)?.binding : undefined
           return json(res, 200, { worker: pair?.worker ?? null, lead: pair?.lead ?? null,
             selected: Boolean(bound?.selected), catalog: await physicalCatalog() })
+        }
+        if (url.searchParams.get('view') === 'running') {
+          // All sessions with a selected fusion binding, for the global panel.
+          const sessions = bindings.selected().map(binding => {
+            let title: string | null = null
+            try {
+              title = (ctx.agents.get(SessionId(binding.sessionId))?.session.snapshotEvents()
+                .findLast(event => event.type === 'session/title') as { title?: string } | undefined)?.title ?? null
+            } catch { title = null }
+            const status = readFusionStatus(store, binding.sessionId)
+            return { sessionId: binding.sessionId, title,
+              lead: binding.profile.lead, worker: binding.profile.worker, task: status.task ?? null }
+          })
+          return json(res, 200, { sessions })
         }
         if (url.searchParams.get('view') === 'cache') {
           let profile: ResolvedProfile | undefined

@@ -46,6 +46,9 @@ export function FusionPairPicker({ sessionId, directory, load }: FusionPairPicke
   const choose = (value: string) => {
     if (busy) return
     setBusy(true); setError(undefined)
+    if (value) {
+      try { localStorage.setItem('fusion-next:last-executor', value) } catch { /* storage unavailable */ }
+    }
     void fetch('/api/fusion-next', {
       method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ action: 'session-pair', sessionId, worker: value ? routeOf(value) ?? null : null }),
@@ -60,7 +63,22 @@ export function FusionPairPicker({ sessionId, directory, load }: FusionPairPicke
   }
   const groups = view?.catalog?.groups ?? []
   const current = view?.worker ? keyOf(view.worker) : ''
+  const lastExecutor = () => {
+    try { return localStorage.getItem('fusion-next:last-executor') ?? '' } catch { return '' }
+  }
+  const firstModel = () => {
+    const group = groups[0], model = group?.models[0]
+    return group && model ? `${group.id}/${model.id}` : ''
+  }
+  const toggle = () => choose(view?.worker ? '' : (lastExecutor() || firstModel()))
   return <div style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '4px 12px 0', fontSize: 12, color: 'var(--dsw-alias-label-secondary)' }}>
+    <button type="button" onClick={toggle} disabled={busy} role="switch" aria-checked={Boolean(view?.worker)}
+      aria-label={tr(lang, '开关本会话 Fusion Next', 'Toggle Fusion Next for this session')}
+      style={{ flexShrink: 0, fontSize: 12, padding: '2px 8px', minHeight: 26, borderRadius: 6, cursor: 'pointer',
+        border: '1px solid var(--dsw-alias-border-l2)', backgroundColor: 'var(--dsw-alias-bg-layer-1)',
+        color: 'var(--dsw-alias-label-primary)' }}>
+      {view?.worker ? tr(lang, 'Fusion ●', 'Fusion ●') : tr(lang, 'Fusion ○', 'Fusion ○')}
+    </button>
     <span style={{ flexShrink: 0 }}>{tr(lang, '执行', 'Executor')}</span>
     <select aria-label={tr(lang, '执行模型', 'Executor model')} value={current} disabled={busy}
       onChange={event => choose(event.target.value)}
