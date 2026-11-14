@@ -147,15 +147,8 @@
 {"key":"fn-glm53f|T11|s1","arm":"fn-glm53f","task":"T11","seed":1,"score":4,"why":"文档四个部分齐全、中文约3000字符、面向新成员且大部分准确，但核心架构细节有事实错误：ripgrep 14+ 用 lexopt 而非 clap 解析参数、不存在 crates/decoder（编码靠 encoding_rs_io）、crate 目录名与包名混淆且漏掉 crates/grep 门面 crate。"}
 {"key":"fn-glm53f|R10|s1","arm":"fn-glm53f","task":"R10","seed":1,"score":5,"why":"实测落盘文件（bench-runs/solo-glm53f-s1-R10/MODULES.md，163行）远超要求：14个模块条目均带职责+入口目录+产物路径+新人提示，SUBDIRS启停、共享内存key、TARGET映射等事实均与源码核对，中文onboarding地图口吻到位，仅产出摘要里的路径前缀（fn-）和行数（98）与实际略有不符但不影响交付物本身质量。"}
 {"key":"fn-gpt6luna|T1|s1","arm":"fn-gpt6luna","task":"T1","seed":1,"score":4,"why":"机制讲解准确到位（GIL锁的是字节码执行权、引用计数非线程安全、I/O会释放GIL、多进程各有独立解释器），但产出在最后一句被截断（\"Jython、\"戛然而止），且篇幅略超\"两三段话\"的要求。"}
-{"key":"fn-gpt6luna|T11|s1","arm":"fn-gpt6luna","task":"T11","seed":1,"score":1,"why":"声称的交付路径 bench-runs/fn-gpt6luna-s1-T11/ 为空目录，PROJECT_OVERVIEW.md 并未写入；报告中的 grep 命中与 2089 字验证结果为虚假声明（相似文件实际在 solo-gpt6luna-s1-T11/ 下），任务核心交付物缺失。"}
-{"key":"fn-gpt6luna|T12|s1","arm":"fn-gpt6luna","task":"T12","seed":1,"score":1,"why":"声称已写入并验证 bench-runs/fn-gpt6luna-s1-T12/RESEARCH.md（4074字节/910中文字符），但实测该目录为空、文件不存在——交付物缺失且验证数据失实。"}
-{"key":"fn-gpt6luna|R10|s1","arm":"fn-gpt6luna","task":"R10","seed":1,"score":2,"why":"侦察内容相关且覆盖了≥8个模块的职责与目录，但核心交付物 MODULES.md 实际未写出，任务未完成。"}
 {"key":"fn-glm53f|T1|s2","arm":"fn-glm53f","task":"T1","seed":2,"score":4,"why":"机制讲解准确清晰（锁字节码执行权、引用计数竞态、分时共用单核、多进程独立解释器），无代码且条理分明，但结尾「补充：Py」明显被截断，产出不完整。"}
-{"key":"fn-glm53f|T12|s2","arm":"fn-glm53f","task":"T12","seed":2,"score":1,"why":"产出声称 RESEARCH.md 已写入 bench-runs/fn-glm53f-s2-T12/ 并'已实际验证'，但该目录实际为空、全工作区无此文件——交付物缺失且验证声明系虚构。"}
-{"key":"fn-glm53f|R10|s2","arm":"fn-glm53f","task":"R10","seed":2,"score":1,"why":"产出声称文件写在 bench-runs/fn-glm53f-s2-R10/MODULES.md，但该目录实际为空、全盘也找不到对应文件——交付物不存在，无法验收"}
 {"key":"fn-gpt6luna|T1|s2","arm":"fn-gpt6luna","task":"T1","seed":2,"score":5,"why":"准确指出 GIL 锁的是解释器执行权而非数据，机制（字节码串行化、定时/阻塞让出）、多线程跑不满多核与多进程真并行的原因都讲清楚了，还补充了 I/O 和 NumPy 释放 GIL 的边界，且未写代码。"}
-{"key":"fn-gpt6luna|T11|s2","arm":"fn-gpt6luna","task":"T11","seed":2,"score":1,"why":"声称已写入并通过验证，但 bench-runs/fn-gpt6luna-s2-T11/ 目录实际为空，PROJECT_OVERVIEW.md 不存在——交付物缺失属于严重错误。"}
-{"key":"fn-gpt6luna|R10|s2","arm":"fn-gpt6luna","task":"R10","seed":2,"score":1,"why":"交付物不存在——bench-runs/fn-gpt6luna-s2-R10/ 目录为空，声称写入的 137 行 MODULES.md 实际并未落盘，属于虚假完成。"}
 {"key":"solo-dsv4f|T1|s1","arm":"solo-dsv4f","task":"T1","seed":1,"score":3,"why":"前两段准确精炼地解释了GIL锁解释器状态（引用计数非原子）及多线程为何跑不满多核，但第三段在“多进程能跑满，是因为每……”处被截断，任务要求的另一半核心问题（多进程为何可以）完全没答出来。"}
 {"key":"solo-gem38fh|T1|s1","arm":"solo-gem38fh","task":"T1","seed":1,"score":4,"why":"机制讲解准确（锁解释器与引用计数、单线程持锁执行字节码、多进程各有独立解释器和GIL），无代码且分段清晰，但第三段在'由'处被截断，多进程跑满多核的结论句没收完。"}
 {"key":"solo-gem38fh|T11|s1","arm":"solo-gem38fh","task":"T11","seed":1,"score":4,"why":"文件已创建且实为 ripgrep/Redis 等真实开源项目概览，四个部分齐全、中文、远超500字、新成员口吻，完全满足任务要求；但产出文字声称写的是 Vite，与实际文件内容不符，报告描述有失准确。"}
@@ -198,3 +191,10 @@
 {"key":"fn-swe16s|T1|s2","arm":"fn-swe16s","task":"T1","seed":2,"score":3,"why":"前两段对GIL锁解释器执行权、多线程抢锁跑不满多核的解释准确且到位，但第三段'每个进程有'处被截断，多进程为何能跑满多核这一半任务没答完。"}
 {"key":"fn-swe16s|T11|s2","arm":"fn-swe16s","task":"T11","seed":2,"score":5,"why":"四个必需部分齐全、中文远超500字、对 ripgrep 的 workspace 分层架构（ignore 并行遍历+grep-searcher 双路径+printer 输出）描述准确且口吻贴合新成员上手场景。"}
 {"key":"fn-swe16s|R10|s2","arm":"fn-swe16s","task":"R10","seed":2,"score":4,"why":"结构清晰、覆盖10个模块且职责/入口基本与NT.pro的SUBDIRS及实际目录吻合，但遗漏了SUBDIRS中在用的XiZhuiDuiGao、XiZhuiJiaoGao、DanDaoYiBu、SerialAndNetwork(_Parset)等工位，个别数字（源文件/脚本数）未严格核实。"}
+{"key":"fn-gpt6luna|T11|s1","arm":"fn-gpt6luna","task":"T11","seed":1,"score":5,"why":"四个部分齐全、中文且远超500字，架构分层与crate职责描述准确（仅'flags宏'等小细节与现行lexopt实现略有出入），对新成员上手指引具体可执行。"}
+{"key":"fn-gpt6luna|T12|s1","arm":"fn-gpt6luna","task":"T12","seed":1,"score":5,"why":"内容完整覆盖 asyncio 与 threading 的核心差异、对比表格、适用场景、代码示例与选型建议，中文且远超 500 字，技术表述准确（GIL、协作式/抢占式调度、run_in_executor 等均正确）。"}
+{"key":"fn-gpt6luna|R10|s1","arm":"fn-gpt6luna","task":"R10","seed":1,"score":5,"why":"覆盖15个模块（远超8个下限），每个模块均有职责与入口目录、中文表述清晰、按NT.pro启用/注释状态做了区分，并附新人上手路线，完全契合onboarding地图的定位。"}
+{"key":"fn-glm53f|T12|s2","arm":"fn-glm53f","task":"T12","seed":2,"score":5,"why":"完整覆盖要求：含对比表格、分场景选型建议、对照代码示例，中文且远超500字，GIL/协程/线程等技术点准确，示例中asyncio.to_thread的妥协也已如实标注。"}
+{"key":"fn-glm53f|R10|s2","arm":"fn-glm53f","task":"R10","seed":2,"score":5,"why":"模块数远超8个且每个都有职责、入口目录、工程文件与SUBDIRS启用状态，hot/工位按功能分组并标注活代码/备份目录，还给了新人上手路径，完全符合onboarding地图的定位且内部自洽。"}
+{"key":"fn-gpt6luna|T11|s2","arm":"fn-gpt6luna","task":"T11","seed":2,"score":5,"why":"四个部分齐全、内容准确（crate 分层、Teddy/SIMD、ignore 机制均属实），中文超500字且确实像写给新成员的入职导览，含上手命令和首个 PR 建议。"}
+{"key":"fn-gpt6luna|R10|s2","arm":"fn-gpt6luna","task":"R10","seed":2,"score":5,"why":"模块数量远超8个且逐一给出职责与入口目录，架构概述、已启用/注释SUBDIRS区分、新人阅读顺序齐全，中文且细节具体（含路径、.pro行号、部署结构），完全符合onboarding地图要求。"}
