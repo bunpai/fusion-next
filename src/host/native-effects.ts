@@ -185,8 +185,8 @@ export class NativeEffects {
 
   waitingForJob(agent: Agent): boolean { return [...this.#waiters.values()].includes(agent) }
 
-  onlyBackgroundPending(taskId: TaskId): boolean {
-    const pending = this.pending(taskId)
+  onlyBackgroundPending(taskId: TaskId, exec?: { callId: string; rootCallId: string }): boolean {
+    const pending = this.pendingFor(taskId, exec)
     return pending.length > 0 && pending.every(({ id, record }) => record.state === 'dispatch-started'
       && record.nativeJob && this.#jobs.get(record.nativeJob.id)?.id === id)
   }
@@ -204,6 +204,24 @@ export class NativeEffects {
         if (this.#jobs.has(id)) this.#settled(live, done)
       } catch (error) { this.#uncertain(live, error); throw error }
     }
+  }
+
+  /**
+   * Pending effects excluding the tool call that contains the current dispatch.
+   * Under PTC every tool runs inside a run_code dispatch, which is itself a tracked
+   * mutation whose effect stays 'dispatch-started' for the entire inner call — a
+   * work-order gate that treats it as unsettled deadlocks. Only ancestor calls are
+   * excluded: the containing call's id prefixes inner ':ptc:N' ids (and equals their
+   * rootCallId). Sibling inner calls (X:ptc:0 pending while X:ptc:1 runs) still count.
+   * `agentId` further restricts the count to one Agent's own effects: submit/finish
+   * gates ask "does THIS Agent still owe settlement", not "is anyone in the task busy".
+   */
+  pendingFor(taskId: TaskId, exec?: { callId: string; rootCallId: string }, agentId?: string): readonly { id: string; record: EffectRecord }[] {
+    const pending = this.pending(taskId)
+    if (!exec) return agentId ? pending.filter(({ record }) => record.agentId === agentId) : pending
+    return pending.filter(({ record }) => record.callId !== exec.callId
+      && record.callId !== exec.rootCallId && !exec.callId.startsWith(`${record.callId}:`)
+      && (agentId === undefined || record.agentId === agentId))
   }
 
   pending(taskId: TaskId): readonly { id: string; record: EffectRecord }[] {

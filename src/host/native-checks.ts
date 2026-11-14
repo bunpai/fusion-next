@@ -367,6 +367,17 @@ async function invokeCheck(input: CheckInput, check: FrozenCheck) {
   const remove = input.authorizeNested(callId)
   const checkArgs = { command: check.definition.command, description: check.definition.description,
     workdir: root, ...(input.nativeTimeout && check.definition.timeoutSeconds === undefined ? {} : { timeoutMs: (check.definition.timeoutSeconds ?? order.policy.commandMaxSeconds) * 1000 }), run_in_background: false }
+  // PTC preset sessions expose only `run_code` directly — the native shell
+  // tool is reachable inside a run_code program via `tools.<shell>(...)`.
+  // Detect a PTC dispatch by the `:ptc:` suffix the runtime appends to inner
+  // callIds and wrap the check command accordingly; the program returns the
+  // shell tool's raw result object, so the same parsing below applies.
+  const ptcDispatch = String(exec.callId ?? '').includes(':ptc:') || String(exec.rootCallId ?? '').includes(':ptc:')
+  const program = `return await tools.${nativeShellTool}(${JSON.stringify(checkArgs)})`
+  const runCodeArgs = { code: program, description: checkArgs.description ?? 'fusion acceptance check' }
+  const call = ptcDispatch
+    ? { id: callId, name: 'run_code', arguments: JSON.stringify(runCodeArgs) }
+    : { id: callId, name: nativeShellTool, arguments: JSON.stringify(checkArgs) }
   let result: { additionalContexts?: unknown[]; value?: unknown; isError?: boolean; content?: unknown }
   try {
     // SDK compat: newer Hosts expose ctx.tools.execute as a BATCH entry
@@ -374,8 +385,7 @@ async function invokeCheck(input: CheckInput, check: FrozenCheck) {
     // ({callId,name,arguments}). Passing both lets either runtime find the
     // fields it reads.
     const raw = await ctx.tools.execute({ callId, rootCallId: exec.rootCallId, parent: exec.token,
-      calls: [{ id: callId, name: nativeShellTool, arguments: JSON.stringify(checkArgs) }],
-      name: nativeShellTool, arguments: checkArgs,
+      calls: [call], name: call.name, arguments: call.name === 'run_code' ? runCodeArgs : checkArgs,
       agent: exec.agent, signal: exec.signal } as Parameters<typeof ctx.tools.execute>[0])
     // Batch runtimes settle per-call results under .results[]; single-call
     // runtimes return the result object itself.
@@ -393,7 +403,20 @@ async function invokeCheck(input: CheckInput, check: FrozenCheck) {
     throw error
   } finally { remove() }
   for (const context of result.additionalContexts ?? []) exec.deferContext(context as Parameters<typeof exec.deferContext>[0])
-  const raw = record(result.value)
+  // Under PTC, result.value is the run_code program's return value — the
+  // `tools.<shell>(...)` call's result. Depending on the runtime that may be
+  // the shell tool's raw value already or its full result envelope, so walk
+  // .value/.result chains until the shell-shape object ({kind, exitCode|stdout})
+  // surfaces.
+  const unwrapShellValue = (v: unknown, depth = 0): unknown => {
+    if (v === null || typeof v !== 'object' || depth > 4) return v
+    const o = v as Record<string, unknown>
+    if ('kind' in o && ('exitCode' in o || 'stdout' in o)) return v
+    if ('value' in o) return unwrapShellValue(o.value, depth + 1)
+    if ('result' in o) return unwrapShellValue(o.result, depth + 1)
+    return v
+  }
+  const raw = record(ptcDispatch ? unwrapShellValue(result.value) : result.value)
   const stdout = record(raw?.stdout), stderr = record(raw?.stderr)
   const nativeForeground = !result.isError && raw?.kind === 'foreground'
   const completed = nativeForeground && raw.aborted === false && raw.timedOut === false

@@ -347,6 +347,12 @@ export class FusionCoordinator {
   readonly #auxiliary = new NativeAuxiliaryRequests()
   readonly #dispose: (() => void)[] = []
   readonly #nestedChecks = new Map<string, { agent: Agent; parent: symbol }>()
+  #nestedCheckMatch(exec: Readonly<ToolExecution>): boolean {
+    const nested = this.#nestedChecks.get(exec.callId) ?? (exec.rootCallId ? this.#nestedChecks.get(exec.rootCallId) : undefined)
+    if (!nested || nested.agent !== exec.agent) return false
+    return exec.parent === undefined || nested.parent === exec.parent || this.#nestedChecks.get(exec.rootCallId ?? '') === nested
+  }
+
   readonly #reads = new Map<string, number>()
   readonly #held = new Map<TaskId, LeaseRecord>()
   readonly #installErrors = new Map<string, string>()
@@ -805,10 +811,10 @@ export class FusionCoordinator {
     if (control.mode !== 'running' || control.budgetBlocked || control.recovering || control.outcomeUnknown || control.pendingApprovalIds.length) {
       return `Fusion execution is gated: ${state.phase}`
     }
-    if (role === 'worker') {
-      const runtime = this.#runtime(binding.taskId)
-      if (runtime.submitted) return 'Worker report was submitted; wait for Lead feedback'
-    }
+    // A submitted Worker still needs requests: its turn must be able to close with a
+    // final message. Mutating tool calls are denied per-execution in #toolBlocked —
+    // blocking the whole request here left the turn 'blocked' and the Host reported
+    // the Worker as declined even though its report was already persisted.
     return undefined
   }
 
@@ -909,6 +915,17 @@ export class FusionCoordinator {
     if (!exec.agent) return 'Fusion tools require a native Agent'
     const blocked = this.#accessBlocked(exec.agent, binding, role)
     if (blocked) return blocked
+    if (role === 'worker') {
+      // Post-report, mutation tools are denied per-call while requests stay open so the
+      // Worker can still close its turn. send_message to the parent is communication,
+      // not a workspace effect; reads cannot invalidate the frozen report either.
+      const runtime = this.#runtime(binding.taskId)
+      const submitted = this.state(binding.taskId).parallelChild === SessionId(exec.agent.id)
+        ? runtime.parallelSubmitted : runtime.submitted
+      if (submitted && !isRead(exec) && exec.name !== 'send_message' && exec.name !== 'run_code') {
+        return 'Worker report was submitted; wait for Lead feedback'
+      }
+    }
     if (binding.profile.interactionMode === 'model-like' && !enforcedWorkflow(binding)) {
       const stalled = this.#readStreak(exec, role)
       if (stalled) return stalled
@@ -954,10 +971,13 @@ export class FusionCoordinator {
       const separated = this.#separatedLeadGuard(exec, binding)
       if (separated !== false) return separated
     }
+    // run_code is exempt here exactly as in #separatedLeadGuard below: under PTC it wraps every
+    // dispatch and its inner calls re-enter this gate one by one — denying the wrapper would lock
+    // the Lead out of even fusion_next_wait/fusion_next_read_state while the Sidekick owns the work.
     if (enforcedWorkflow(binding) && role === 'lead' && !isRead(exec) && !FUSION_NEXT_TOOLS.has(exec.name)
+      && exec.name !== 'run_code'
       && (!adaptiveWorkflow(binding) || state.currentWorkOrder)) {
-      const nested = this.#nestedChecks.get(exec.callId)
-      const check = isShellTool(exec.name) && nested?.agent === exec.agent && (exec.parent === undefined || nested.parent === exec.parent)
+      const check = isShellTool(exec.name) && this.#nestedCheckMatch(exec)
       const takeover = state.currentWorkOrder && this.#runtime(binding.taskId).takeover
       if (!check && !takeover) return this.workflow.denyEffect(binding)
     }
@@ -1001,9 +1021,8 @@ export class FusionCoordinator {
         if (dir === undefined) return `Shell commands run inside the project root ${lease.workspaceId}; workdir ${JSON.stringify(args.workdir)} is outside it. Omit workdir or pass a directory inside the project.`
         try { if (dir) workspacePath(lease.workspaceId, dir) } catch (error) { return String(error) }
       }
-      const nested = this.#nestedChecks.get(exec.callId)
       if (role === 'lead' && state.intent === 'DELEGATE' && !this.#runtime(binding.taskId).takeover
-        && (!nested || nested.agent !== exec.agent || (exec.parent !== undefined && nested.parent !== exec.parent))) {
+        && !this.#nestedCheckMatch(exec)) {
         return 'Lead is reviewing; use the native acceptance checks or request takeover'
       }
     }
@@ -1077,8 +1096,7 @@ export class FusionCoordinator {
     // re-enter this gate individually (nested shell still hits leadShellProblem), so denying the outer call
     // would dead-lock a sandboxed Lead that cannot even reach fusion_next_delegate.
     if (isRead(exec) || FUSION_NEXT_TOOLS.has(exec.name) || exec.name === 'run_code') return false
-    const nested = this.#nestedChecks.get(exec.callId)
-    if (isShellTool(exec.name) && nested && nested.agent === exec.agent && (exec.parent === undefined || nested.parent === exec.parent)) return false
+    if (isShellTool(exec.name) && this.#nestedCheckMatch(exec)) return false
     if (isShellTool(exec.name) && (exec.arguments as { run_in_background?: unknown }).run_in_background === true) {
       this.workflow.denyEffect(binding)
       return 'FUSION_NEXT_LEAD_READ_ONLY: the Lead runs only short foreground inspection commands. Test runs and long commands belong to the Sidekick: delegate them.'
@@ -1205,7 +1223,7 @@ export class FusionCoordinator {
   /** A disposed Worker is a terminal persisted state, not an unknown side effect, when nothing is still running. */
   async #collectAbsentWorker(agent: Agent, binding: SessionBinding, exec: ToolRunContext): Promise<string> {
     const outcome = absentWorkerOutcome({
-      pendingEffects: this.effects.pending(binding.taskId).length,
+      pendingEffects: this.effects.pendingFor(binding.taskId, exec).length,
       outcomeUnknown: this.state(binding.taskId).control.outcomeUnknown,
       submitted: Boolean(this.#runtime(binding.taskId).submitted),
     })
@@ -1226,7 +1244,17 @@ export class FusionCoordinator {
     const resident = this.ctx.agents.get(NativeSessionId(childId))
     if (!resident || resident.session.header.parentSession !== agent.id) return this.#collectAbsentWorker(agent, binding, exec)
     try {
-      const settled = await this.transport.settle(agent, childId, exec.signal, true)
+      // Bound the settle so it can never outlive the caller's tool deadline (PTC run_code
+      // cuts at 120s): on timeout the handoff stays alive and the Lead waits again.
+      const raced = await Promise.race([
+        this.transport.settle(agent, childId, exec.signal, true).then(agentOr => ({ kind: 'settled' as const, agentOr })),
+        new Promise<{ kind: 'timeout' }>(resolve => setTimeout(() => resolve({ kind: 'timeout' }), 75000)),
+      ])
+      if (raced.kind === 'timeout') {
+        this.#saveRuntime({ ...this.#runtime(binding.taskId), background: true })
+        return this.#runningReply(binding, 'settling')
+      }
+      const settled = raced.agentOr
       if (!settled) {
         exec.signal.throwIfAborted()
         this.scopes.assertReady(agent)
@@ -1235,7 +1263,7 @@ export class FusionCoordinator {
         this.#saveRuntime({ ...this.#runtime(binding.taskId), background: true })
         return this.#runningReply(binding, 'user-steering')
       }
-      if (this.effects.pending(binding.taskId).length) throw new Error('Worker stopped with unfinished native effects; inspection is required')
+      if (this.effects.pendingFor(binding.taskId, exec).length) throw new Error('Worker stopped with unfinished native effects; inspection is required')
       exec.signal.throwIfAborted()
     } catch (error) {
       const cause = exec.signal.aborted ? new Error('FUSION_NEXT_INTERRUPTED: the native turn was cancelled; progress is retained. Continue the existing task after its effects settle.') : error
@@ -1252,7 +1280,7 @@ export class FusionCoordinator {
           if (!resident || resident.session.header.parentSession !== agent.id) return
           await this.transport.stop(agent, childId)
         })
-        if (this.effects.pending(binding.taskId).length) throw new Error('Worker has unfinished native effects')
+        if (this.effects.pendingFor(binding.taskId, exec).length) throw new Error('Worker has unfinished native effects')
         this.#release(binding.taskId)
         if (!this.state(binding.taskId).control.recovering) this.append(binding.taskId, 'task/paused', { reason: String(cause) })
       } catch (stopError) { this.#trackingFailed(agent, `Worker wait requires recovery: ${String(stopError)}`) }
@@ -1270,11 +1298,21 @@ export class FusionCoordinator {
     if (!state.currentWorkOrder || !state.acceptedChild) throw new Error('No Worker handoff is pending')
     if (state.phase === 'REVIEWING') throw new Error('The current report is ready; review it before another wait')
     if (this.#runtime(binding.taskId).takeover) throw new Error('Lead takeover must submit its own result')
+    // A submitted report is already durable: the delivery may have arrived by inbox splice
+    // (0.2.1 natural settlement) instead of through an in-flight wait. Release the writer and
+    // hand the Lead its review path immediately — waiting on child.whenIdle() after an
+    // aborted-parent delivery can hang past the PTC code-run deadline.
+    if (this.#runtime(binding.taskId).submitted) {
+      this.#release(binding.taskId)
+      exec.signal.throwIfAborted()
+      this.scopes.assertReady(agent)
+      return this.#validate(agent, binding, exec)
+    }
     const operation = readModelControl(this.store, binding)?.operation
     const resumeId = operation && `workflow-worker-resume:${binding.taskId}:${operation.id}`
     const child = this.ctx.agents.get(NativeSessionId(state.acceptedChild))
     if (adaptiveWorkflow(binding) && operation?.taskId === binding.taskId && operation.state === 'delivered'
-      && (!child || child.status === 'idle') && !this.#runtime(binding.taskId).submitted && !this.effects.pending(binding.taskId).length
+      && (!child || child.status === 'idle') && !this.#runtime(binding.taskId).submitted && !this.effects.pendingFor(binding.taskId, exec).length
       && !this.modelControl.waiting(binding, 'worker') && resumeId && !this.store.readDocument(resumeId)) {
       this.store.writeDocument(resumeId, 0, { schemaVersion: 1, operationId: operation.id, childId: state.acceptedChild,
         causeId: exec.callId, at: new Date().toISOString() })
@@ -1307,7 +1345,7 @@ export class FusionCoordinator {
       && priorState.lease?.holder === SessionId(agent.id) && held?.holder === SessionId(agent.id)
       && held.generation === priorState.lease.generation && this.leases.stillHeld(held)
     const parallelGateBypass = mode === 'explore' && priorState.currentWorkOrder !== undefined && priorState.currentWorkOrder.mode !== 'explore'
-    if (!parallelGateBypass && (priorState.lease && !directHandoff || held && !priorState.lease || this.effects.pending(binding.taskId).length)) {
+    if (!parallelGateBypass && (priorState.lease && !directHandoff || held && !priorState.lease || this.effects.pendingFor(binding.taskId, exec).length)) {
       throw new Error('Settle the current writer and effects before a new work order: wait for or stop your running commands (job_output, job_kill) and let pending tools finish, then delegate again')
     }
     const promoting = mode === 'implement' && priorState.currentWorkOrder?.mode === 'explore'
@@ -1331,7 +1369,7 @@ export class FusionCoordinator {
       const cited = citedEvidenceChanged(base.root, this.#runtime(binding.taskId).base, priorState.exploration)
       if (cited) throw new Error(`Cited exploration evidence changed: ${cited}. Frozen baseline ${priorState.currentWorkOrder!.baseSnapshot}. Unrelated files do not block a completed report; cite files that still match, or submit blocked or needs-decision to record the drift.`)
     }
-    if (promoting && ((!explored && !abandoned) || priorState.lease || this.effects.pending(binding.taskId).length)) {
+    if (promoting && ((!explored && !abandoned) || priorState.lease || this.effects.pendingFor(binding.taskId, exec).length)) {
       throw new Error('Wait for the completed read-only exploration on the unchanged workspace before sending an implementation plan')
     }
     if (mode === 'implement' && !args.allowedPaths.length) throw new Error('Explicit allowedPaths are required')
@@ -1386,7 +1424,7 @@ export class FusionCoordinator {
     if (directHandoff) {
       exec.signal.throwIfAborted()
       this.scopes.assertReady(agent)
-      if (mode !== 'text' && held.workspaceId !== base.root || !this.leases.stillHeld(held) || this.effects.pending(binding.taskId).length) {
+      if (mode !== 'text' && held.workspaceId !== base.root || !this.leases.stillHeld(held) || this.effects.pendingFor(binding.taskId, exec).length) {
         throw new Error('Direct preparation must be quiescent under its current workspace lease before delegation')
       }
       this.#release(binding.taskId)
@@ -1439,7 +1477,7 @@ export class FusionCoordinator {
         const child = this.ctx.agents.get(NativeSessionId(childId))
         if (child) { await this.#stopJobs(binding.taskId, () => this.transport.stop(agent, childId)) }
         else if (started) throw new Error('Accepted Worker is absent')
-        if (this.effects.pending(binding.taskId).length) throw new Error('Worker dispatch has unfinished native effects')
+        if (this.effects.pendingFor(binding.taskId, exec).length) throw new Error('Worker dispatch has unfinished native effects')
         this.#release(binding.taskId)
       } catch (stopError) { this.#trackingFailed(agent, `Worker dispatch requires recovery: ${String(stopError)}`) }
       this.append(binding.taskId, 'task/paused', { reason: String(error) })
@@ -1474,7 +1512,7 @@ export class FusionCoordinator {
     try {
       return await this.roleSandbox.whileChecking(agent, binding, () => runBaselineChecks({ ctx: this.ctx, store: this.store, root, order, checks, exec,
         nativeTimeout: binding.profile.interactionMode === 'model-like',
-        authorizeNested: id => { this.#nestedChecks.set(id, { agent, parent: exec.token }); return () => { this.#nestedChecks.delete(id) } } }))
+        authorizeNested: id => { this.#nestedChecks.set(id, { agent, parent: exec.token }); return () => { this.#nestedChecks.delete(id) } } }), exec)
     } finally { if (!leadHolds) this.#release(binding.taskId) }
   }
 
@@ -1489,7 +1527,7 @@ export class FusionCoordinator {
   #expandScope(binding: SessionBinding, runtime: RuntimeRecord, feedback: string, paths: readonly string[], exec: ToolRunContext): string {
     const state = this.state(binding.taskId), order = state.currentWorkOrder!
     if (order.mode === 'explore' || order.mode === 'text') throw new Error('This assignment has no workspace scope to expand')
-    if (!runtime.submitted || state.lease || this.#held.get(binding.taskId) || this.effects.pending(binding.taskId).length) {
+    if (!runtime.submitted || state.lease || this.#held.get(binding.taskId) || this.effects.pendingFor(binding.taskId, exec).length) {
       throw new Error('Add allowedPaths only after the current Worker report, while the Worker is quiescent')
     }
     for (const path of paths) workspacePath(runtime.root, path.trim())
@@ -1523,7 +1561,7 @@ export class FusionCoordinator {
   #amendAcceptance(binding: SessionBinding, runtime: RuntimeRecord, feedback: string, definitions: readonly CheckDefinition[], exec: ToolRunContext): string {
     const state = this.state(binding.taskId), order = state.currentWorkOrder!
     if (order.mode === 'explore' || order.mode === 'text') throw new Error('This assignment has no workspace acceptance checks to amend')
-    if (!runtime.submitted || state.lease || this.#held.get(binding.taskId) || this.effects.pending(binding.taskId).length) {
+    if (!runtime.submitted || state.lease || this.#held.get(binding.taskId) || this.effects.pendingFor(binding.taskId, exec).length) {
       throw new Error('Amend acceptance checks only after the current Worker report, while the Worker is quiescent')
     }
     const protectedPaths = [...new Set(runtime.checks.flatMap(check => check.definition.definitionPaths))]
@@ -1591,7 +1629,7 @@ export class FusionCoordinator {
     const liveGeneration = workerId !== undefined && this.store.statusSnapshot(index => index.hasConversation(binding.taskId, workerId), false)
     const delivery = child?.status !== 'idle' && child
       ? (liveGeneration || this.effects.waitingForJob(child))
-        && (!this.effects.pending(binding.taskId).length || this.effects.onlyBackgroundPending(binding.taskId))
+        && (!this.effects.pendingFor(binding.taskId, exec).length || this.effects.onlyBackgroundPending(binding.taskId, exec))
         ? 'interrupt-generation' : 'next-step'
       : 'continuation'
     const deliveryId = `worker-delivery:${binding.taskId}:${randomUUID()}`
@@ -1614,7 +1652,7 @@ export class FusionCoordinator {
     } catch (error) {
       try {
         await this.#stopJobs(binding.taskId, () => this.transport.stop(agent, childId))
-        if (!this.effects.pending(binding.taskId).length) this.#release(binding.taskId)
+        if (!this.effects.pendingFor(binding.taskId, exec).length) this.#release(binding.taskId)
       } catch (stopError) { this.#trackingFailed(agent, `Worker feedback stop failed: ${String(stopError)}`) }
       this.#trackingFailed(agent, `Worker feedback delivery requires reconciliation: ${String(error)}`)
       throw error
@@ -1704,7 +1742,7 @@ export class FusionCoordinator {
         },
         checks: runtime.checks, nativeTimeout: binding.profile.interactionMode === 'model-like', exec, authorizeNested: id => {
           this.#nestedChecks.set(id, { agent, parent: exec.token }); return () => { this.#nestedChecks.delete(id) }
-        } }))
+        } }), exec)
     } finally { this.#release(binding.taskId) }
     this.#saveRuntime({ ...runtime, verification: checked.verdict.verification, verificationReasons: checked.verdict.reasons })
     this.append(binding.taskId, 'report/submitted', { operationId: order.operationId, report: checked.report })
@@ -1966,7 +2004,7 @@ export class FusionCoordinator {
         execute: async (args, exec) => {
           const binding = this.#binding(agent, role), runtime = this.#runtime(binding.taskId)
           if (role === 'lead' && (!runtime.takeover || !this.state(binding.taskId).currentWorkOrder)) throw new Error('Lead submission requires takeover of an existing work order')
-          if (this.effects.pending(binding.taskId).length) throw new Error('Collect or stop every native job and settle effects before submitting a report')
+          if (this.effects.pendingFor(binding.taskId, exec, agent.id).length) throw new Error('Collect or stop every native job and settle effects before submitting a report')
           if (args.summary.length > 16_000 || args.unresolved.length > 30) throw new Error('Worker report is too large')
           const submitted = { summary: args.summary, unresolved: args.unresolved, status: args.status }
           const state = this.state(binding.taskId)
@@ -2046,7 +2084,7 @@ export class FusionCoordinator {
         }
         exec.signal.throwIfAborted()
         this.scopes.assertReady(agent)
-        if (this.effects.pending(binding.taskId).length) throw new Error('Inspect unfinished Worker effects before takeover')
+        if (this.effects.pendingFor(binding.taskId, exec).length) throw new Error('Inspect unfinished Worker effects before takeover')
         this.#release(binding.taskId)
         const base = snapshotWorkspace(agent.session.header.cwd!)
         const runtime = state.currentWorkOrder ? this.#runtime(binding.taskId)
@@ -2065,7 +2103,7 @@ export class FusionCoordinator {
         return 'Lead owns the write lease. For an existing work order call fusion_next_submit_result after the correction. For direct work, fusion_next_delegate can transfer the lease after preparation; call fusion_next_finish_direct only when the entire user task is complete.'
       } })))
     dispose.push(scope.tools.register(defineTool({ name: 'fusion_next_finish_direct', description: 'Complete the entire direct user task or an answered read-only exploration. This closes the task; it is not a lease-release helper before delegation. Never use for an implementation work order. This does not claim independently verified acceptance.',
-      parameters: {}, output: textOutput, execute: async () => {
+      parameters: {}, output: textOutput, execute: async (_args, exec) => {
         const binding = this.#binding(agent, 'lead'), state = this.state(binding.taskId)
         if (state.currentWorkOrder?.mode === 'explore' && state.exploration?.status !== 'completed') {
           throw new Error('Exploration is incomplete. Use fusion_next_rework with specific feedback. Explain the blocker and end this turn if missing input is required; do not record an implementation review or completion.')
@@ -2073,7 +2111,7 @@ export class FusionCoordinator {
         const explored = state.currentWorkOrder?.mode === 'explore' && state.phase === 'PLANNING'
           && state.exploration?.workOrderId === state.currentWorkOrder.id && state.exploration.status === 'completed'
         if (!explored && (state.currentWorkOrder || state.intent !== 'DIRECT')) throw new Error('Use the bound report and review flow for delegated work')
-        if (this.effects.pending(binding.taskId).length) throw new Error('Collect or stop every native job before completing the direct task')
+        if (this.effects.pendingFor(binding.taskId, exec, agent.id).length) throw new Error('Collect or stop every native job before completing the direct task')
         const runtime = this.#runtime(binding.taskId)
         let snapshot: WorkspaceSnapshot['id']
         if (explored) {
