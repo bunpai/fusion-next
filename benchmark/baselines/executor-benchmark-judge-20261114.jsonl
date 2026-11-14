@@ -1,0 +1,200 @@
+{"key":"solo-swe2|T1|s1","arm":"solo-swe2","task":"T1","seed":1,"why":""}
+{"key":"solo-swe2|T11|s1","arm":"solo-swe2","task":"T11","seed":1,"why":""}
+{"key":"solo-swe2|T12|s1","arm":"solo-swe2","task":"T12","seed":1,"why":""}
+{"key":"solo-swe2|T12|s1","arm":"solo-swe2","task":"T12","seed":1,"why":""}
+{"key":"solo-swe2|R10|s1","arm":"solo-swe2","task":"R10","seed":1,"why":""}
+{"key":"solo-swe2|R10|s1","arm":"solo-swe2","task":"R10","seed":1,"why":""}
+{"key":"solo-swe2|R10|s1","arm":"solo-swe2","task":"R10","seed":1,"why":""}
+{"key":"solo-swe2f|T1|s1","arm":"solo-swe2f","task":"T1","seed":1,"why":""}
+{"key":"solo-swe2f|T1|s1","arm":"solo-swe2f","task":"T1","seed":1,"why":""}
+{"key":"solo-swe2f|T1|s1","arm":"solo-swe2f","task":"T1","seed":1,"why":""}
+{"key":"solo-swe2|R10|s1","arm":"solo-swe2","task":"R10","seed":1,"why":""}
+{"key":"solo-swe2f|T1|s1","arm":"solo-swe2f","task":"T1","seed":1,"why":""}
+{"key":"solo-swe2f|T11|s1","arm":"solo-swe2f","task":"T11","seed":1,"why":""}
+{"key":"solo-swe2f|T12|s1","arm":"solo-swe2f","task":"T12","seed":1,"why":""}
+{"key":"solo-dsv41f|T1|s1","arm":"solo-dsv41f","task":"T1","seed":1,"why":""}
+{"key":"solo-dsv41f|T1|s1","arm":"solo-dsv41f","task":"T1","seed":1,"why":""}
+{"key":"solo-dsv41f|T1|s1","arm":"solo-dsv41f","task":"T1","seed":1,"why":""}
+{"key":"solo-dsv41f|T11|s1","arm":"solo-dsv41f","task":"T11","seed":1,"why":""}
+{"key":"solo-dsv41f|T12|s1","arm":"solo-dsv41f","task":"T12","seed":1,"why":""}
+{"key":"solo-dsv41f|T11|s1","arm":"solo-dsv41f","task":"T11","seed":1,"why":""}
+{"key":"solo-dsv41f|T12|s1","arm":"solo-dsv41f","task":"T12","seed":1,"why":""}
+{"key":"solo-dsv41f|T1|s1","arm":"solo-dsv41f","task":"T1","seed":1,"why":""}
+{"key":"solo-dsv41f|T11|s1","arm":"solo-dsv41f","task":"T11","seed":1,"why":""}
+{"key":"solo-dsv41f|T12|s1","arm":"solo-dsv41f","task":"T12","seed":1,"why":""}
+{"key":"solo-dsv41f|T11|s1","arm":"solo-dsv41f","task":"T11","seed":1,"why":""}
+{"key":"solo-dsv41f|T12|s1","arm":"solo-dsv41f","task":"T12","seed":1,"why":""}
+{"key":"solo-dsv41f|R10|s1","arm":"solo-dsv41f","task":"R10","seed":1,"why":""}
+{"key":"solo-glm53f|T1|s1","arm":"solo-glm53f","task":"T1","seed":1,"why":""}
+{"key":"solo-dsv41f|R10|s1","arm":"solo-dsv41f","task":"R10","seed":1,"why":""}
+{"key":"solo-glm53f|T1|s1","arm":"solo-glm53f","task":"T1","seed":1,"why":""}
+{"key":"solo-dsv41f|R10|s1","arm":"solo-dsv41f","task":"R10","seed":1,"why":""}
+{"key":"solo-glm53f|T11|s1","arm":"solo-glm53f","task":"T11","seed":1,"why":""}
+{"key":"solo-glm53f|T1|s1","arm":"solo-glm53f","task":"T1","seed":1,"why":""}
+{"key":"solo-glm53f|T12|s1","arm":"solo-glm53f","task":"T12","seed":1,"why":""}
+{"key":"solo-glm53f|T11|s1","arm":"solo-glm53f","task":"T11","seed":1,"why":""}
+{"key":"solo-glm53f|T12|s1","arm":"solo-glm53f","task":"T12","seed":1,"why":""}
+{"key":"solo-dsv41f|R10|s1","arm":"solo-dsv41f","task":"R10","seed":1,"why":""}
+{"key":"solo-glm53f|T11|s1","arm":"solo-glm53f","task":"T11","seed":1,"why":""}
+{"key":"solo-glm53f|T1|s1","arm":"solo-glm53f","task":"T1","seed":1,"why":""}
+{"key":"solo-glm53f|R10|s1","arm":"solo-glm53f","task":"R10","seed":1,"why":""}
+{"key":"solo-gem38f|T1|s1","arm":"solo-gem38f","task":"T1","seed":1,"why":""}
+{"key":"solo-glm53f|R10|s1","arm":"solo-glm53f","task":"R10","seed":1,"why":""}
+{"key":"solo-glm53f|T12|s1","arm":"solo-glm53f","task":"T12","seed":1,"why":""}
+{"key":"solo-gem38f|T1|s1","arm":"solo-gem38f","task":"T1","seed":1,"why":""}
+{"key":"solo-gem38f|T11|s1","arm":"solo-gem38f","task":"T11","seed":1,"why":""}
+{"key":"solo-gem38f|T12|s1","arm":"solo-gem38f","task":"T12","seed":1,"why":""}
+{"key":"solo-gem38f|T11|s1","arm":"solo-gem38f","task":"T11","seed":1,"why":""}
+{"key":"solo-glm53f|R10|s1","arm":"solo-glm53f","task":"R10","seed":1,"why":""}
+{"key":"solo-gem38f|T12|s1","arm":"solo-gem38f","task":"T12","seed":1,"why":""}
+{"key":"solo-gem38f|T1|s1","arm":"solo-gem38f","task":"T1","seed":1,"why":""}
+{"key":"solo-gpt6luna|T1|s1","arm":"solo-gpt6luna","task":"T1","seed":1,"why":""}
+{"key":"solo-gem38f|T11|s1","arm":"solo-gem38f","task":"T11","seed":1,"why":""}
+{"key":"solo-gem38f|R10|s1","arm":"solo-gem38f","task":"R10","seed":1,"why":""}
+{"key":"solo-gpt6luna|T1|s1","arm":"solo-gpt6luna","task":"T1","seed":1,"why":""}
+{"key":"solo-gem38f|T12|s1","arm":"solo-gem38f","task":"T12","seed":1,"why":""}
+{"key":"solo-glm53f|R10|s1","arm":"solo-glm53f","task":"R10","seed":1,"why":""}
+{"key":"solo-gem38f|T1|s1","arm":"solo-gem38f","task":"T1","seed":1,"why":""}
+{"key":"solo-gpt6luna|T11|s1","arm":"solo-gpt6luna","task":"T11","seed":1,"why":""}
+{"key":"solo-gpt6luna|T11|s1","arm":"solo-gpt6luna","task":"T11","seed":1,"why":""}
+{"key":"solo-gpt6luna|T12|s1","arm":"solo-gpt6luna","task":"T12","seed":1,"why":""}
+{"key":"solo-gem38f|T11|s1","arm":"solo-gem38f","task":"T11","seed":1,"why":""}
+{"key":"solo-gem38f|T12|s1","arm":"solo-gem38f","task":"T12","seed":1,"why":""}
+{"key":"solo-gem38f|R10|s1","arm":"solo-gem38f","task":"R10","seed":1,"why":""}
+{"key":"solo-gpt6luna|T1|s1","arm":"solo-gpt6luna","task":"T1","seed":1,"why":""}
+{"key":"solo-gpt6luna|R10|s1","arm":"solo-gpt6luna","task":"R10","seed":1,"why":""}
+{"key":"solo-gpt6luna|T11|s1","arm":"solo-gpt6luna","task":"T11","seed":1,"why":""}
+{"key":"solo-gpt6luna|T12|s1","arm":"solo-gpt6luna","task":"T12","seed":1,"why":""}
+{"key":"solo-gem38f|R10|s1","arm":"solo-gem38f","task":"R10","seed":1,"why":""}
+{"key":"solo-gpt6luna|T1|s1","arm":"solo-gpt6luna","task":"T1","seed":1,"why":""}
+{"key":"solo-gpt6luna|T11|s1","arm":"solo-gpt6luna","task":"T11","seed":1,"why":""}
+{"key":"solo-gpt6luna|T12|s1","arm":"solo-gpt6luna","task":"T12","seed":1,"why":""}
+{"key":"fn-swe2f|T1|s1","arm":"fn-swe2f","task":"T1","seed":1,"why":""}
+{"key":"solo-gpt6luna|R10|s1","arm":"solo-gpt6luna","task":"R10","seed":1,"why":""}
+{"key":"fn-swe2f|T1|s1","arm":"fn-swe2f","task":"T1","seed":1,"why":""}
+{"key":"solo-gpt6luna|R10|s1","arm":"solo-gpt6luna","task":"R10","seed":1,"why":""}
+{"key":"fn-swe2f|T1|s1","arm":"fn-swe2f","task":"T1","seed":1,"why":""}
+{"key":"solo-dsv41f|T1|s2","arm":"solo-dsv41f","task":"T1","seed":2,"why":""}
+{"key":"fn-glm53f|T12|s1","arm":"fn-glm53f","task":"T12","seed":1,"why":""}
+{"key":"solo-dsv41f|T11|s2","arm":"solo-dsv41f","task":"T11","seed":2,"why":""}
+{"key":"solo-dsv41f|T12|s2","arm":"solo-dsv41f","task":"T12","seed":2,"why":""}
+{"key":"solo-dsv41f|R10|s2","arm":"solo-dsv41f","task":"R10","seed":2,"why":""}
+{"key":"solo-glm53f|T1|s2","arm":"solo-glm53f","task":"T1","seed":2,"why":""}
+{"key":"solo-glm53f|T11|s2","arm":"solo-glm53f","task":"T11","seed":2,"why":""}
+{"key":"solo-glm53f|T12|s2","arm":"solo-glm53f","task":"T12","seed":2,"why":""}
+{"key":"solo-glm53f|R10|s2","arm":"solo-glm53f","task":"R10","seed":2,"why":""}
+{"key":"solo-gem38f|T11|s2","arm":"solo-gem38f","task":"T11","seed":2,"why":""}
+{"key":"solo-gem38f|T12|s2","arm":"solo-gem38f","task":"T12","seed":2,"why":""}
+{"key":"solo-swe2|T11|s2","arm":"solo-swe2","task":"T11","seed":2,"why":""}
+{"key":"solo-swe2|T11|s2","arm":"solo-swe2","task":"T11","seed":2,"why":""}
+{"key":"solo-swe2|T12|s2","arm":"solo-swe2","task":"T12","seed":2,"why":""}
+{"key":"solo-swe2|T11|s2","arm":"solo-swe2","task":"T11","seed":2,"why":""}
+{"key":"solo-swe2|T12|s2","arm":"solo-swe2","task":"T12","seed":2,"why":""}
+{"key":"solo-swe2|T12|s2","arm":"solo-swe2","task":"T12","seed":2,"why":""}
+{"key":"solo-gpt6luna|T11|s2","arm":"solo-gpt6luna","task":"T11","seed":2,"why":""}
+{"key":"solo-gpt6luna|T12|s2","arm":"solo-gpt6luna","task":"T12","seed":2,"why":""}
+{"key":"solo-dsv41f|T1|s2","arm":"solo-dsv41f","task":"T1","seed":2,"why":""}
+{"key":"solo-dsv41f|T1|s2","arm":"solo-dsv41f","task":"T1","seed":2,"why":""}
+{"key":"solo-dsv41f|T1|s2","arm":"solo-dsv41f","task":"T1","seed":2,"why":""}
+{"key":"solo-gpt6luna|R10|s2","arm":"solo-gpt6luna","task":"R10","seed":2,"why":""}
+{"key":"solo-dsv41f|T11|s2","arm":"solo-dsv41f","task":"T11","seed":2,"why":""}
+{"key":"solo-dsv41f|T11|s2","arm":"solo-dsv41f","task":"T11","seed":2,"why":""}
+{"key":"solo-dsv41f|T12|s2","arm":"solo-dsv41f","task":"T12","seed":2,"why":""}
+{"key":"solo-dsv41f|T11|s2","arm":"solo-dsv41f","task":"T11","seed":2,"why":""}
+{"key":"solo-dsv41f|T12|s2","arm":"solo-dsv41f","task":"T12","seed":2,"why":""}
+{"key":"solo-dsv41f|T12|s2","arm":"solo-dsv41f","task":"T12","seed":2,"why":""}
+{"key":"solo-dsv41f|R10|s2","arm":"solo-dsv41f","task":"R10","seed":2,"why":""}
+{"key":"solo-dsv41f|R10|s2","arm":"solo-dsv41f","task":"R10","seed":2,"why":""}
+{"key":"solo-glm53f|T1|s2","arm":"solo-glm53f","task":"T1","seed":2,"why":""}
+{"key":"solo-glm53f|T1|s2","arm":"solo-glm53f","task":"T1","seed":2,"why":""}
+{"key":"solo-dsv41f|R10|s2","arm":"solo-dsv41f","task":"R10","seed":2,"why":""}
+{"key":"solo-glm53f|T1|s2","arm":"solo-glm53f","task":"T1","seed":2,"why":""}
+{"key":"solo-glm53f|T11|s2","arm":"solo-glm53f","task":"T11","seed":2,"why":""}
+{"key":"solo-glm53f|T11|s2","arm":"solo-glm53f","task":"T11","seed":2,"why":""}
+{"key":"solo-glm53f|T12|s2","arm":"solo-glm53f","task":"T12","seed":2,"why":""}
+{"key":"solo-glm53f|T12|s2","arm":"solo-glm53f","task":"T12","seed":2,"why":""}
+{"key":"solo-glm53f|T11|s2","arm":"solo-glm53f","task":"T11","seed":2,"why":""}
+{"key":"solo-glm53f|T12|s2","arm":"solo-glm53f","task":"T12","seed":2,"why":""}
+{"key":"solo-gem38f|T1|s2","arm":"solo-gem38f","task":"T1","seed":2,"why":""}
+{"key":"solo-gem38f|T1|s2","arm":"solo-gem38f","task":"T1","seed":2,"why":""}
+{"key":"solo-gem38f|T11|s2","arm":"solo-gem38f","task":"T11","seed":2,"why":""}
+{"key":"solo-gem38f|T12|s2","arm":"solo-gem38f","task":"T12","seed":2,"why":""}
+{"key":"solo-glm53f|R10|s2","arm":"solo-glm53f","task":"R10","seed":2,"why":""}
+{"key":"solo-gem38f|T1|s2","arm":"solo-gem38f","task":"T1","seed":2,"why":""}
+{"key":"solo-gem38f|T11|s2","arm":"solo-gem38f","task":"T11","seed":2,"why":""}
+{"key":"solo-gem38f|T12|s2","arm":"solo-gem38f","task":"T12","seed":2,"why":""}
+{"key":"solo-gem38f|T11|s2","arm":"solo-gem38f","task":"T11","seed":2,"why":""}
+{"key":"solo-gem38f|T12|s2","arm":"solo-gem38f","task":"T12","seed":2,"why":""}
+{"key":"solo-gem38f|R10|s2","arm":"solo-gem38f","task":"R10","seed":2,"why":""}
+{"key":"solo-gpt6luna|T1|s2","arm":"solo-gpt6luna","task":"T1","seed":2,"why":""}
+{"key":"solo-gem38f|R10|s2","arm":"solo-gem38f","task":"R10","seed":2,"why":""}
+{"key":"solo-gpt6luna|T1|s2","arm":"solo-gpt6luna","task":"T1","seed":2,"why":""}
+{"key":"solo-gem38f|R10|s2","arm":"solo-gem38f","task":"R10","seed":2,"why":""}
+{"key":"solo-gpt6luna|T1|s2","arm":"solo-gpt6luna","task":"T1","seed":2,"why":""}
+{"key":"solo-gpt6luna|T11|s2","arm":"solo-gpt6luna","task":"T11","seed":2,"why":""}
+{"key":"solo-gpt6luna|T12|s2","arm":"solo-gpt6luna","task":"T12","seed":2,"why":""}
+{"key":"solo-gpt6luna|T11|s2","arm":"solo-gpt6luna","task":"T11","seed":2,"why":""}
+{"key":"solo-gpt6luna|T12|s2","arm":"solo-gpt6luna","task":"T12","seed":2,"why":""}
+{"key":"solo-gpt6luna|T11|s2","arm":"solo-gpt6luna","task":"T11","seed":2,"why":""}
+{"key":"solo-gpt6luna|T12|s2","arm":"solo-gpt6luna","task":"T12","seed":2,"why":""}
+{"key":"solo-gpt6luna|R10|s2","arm":"solo-gpt6luna","task":"R10","seed":2,"why":""}
+{"key":"fn-swe2f|T1|s2","arm":"fn-swe2f","task":"T1","seed":2,"why":""}
+{"key":"solo-gpt6luna|R10|s2","arm":"solo-gpt6luna","task":"R10","seed":2,"why":""}
+{"key":"fn-swe2f|T1|s2","arm":"fn-swe2f","task":"T1","seed":2,"why":""}
+{"key":"solo-gpt6luna|R10|s2","arm":"solo-gpt6luna","task":"R10","seed":2,"why":""}
+{"key":"fn-swe2f|T1|s2","arm":"fn-swe2f","task":"T1","seed":2,"why":""}
+{"key":"fn-glm53f|T1|s1","arm":"fn-glm53f","task":"T1","seed":1,"score":5,"why":"准确命中核心：GIL锁的是解释器执行权（保护引用计数等非线程安全内部状态），讲清了线程抢锁分片串行、I/O时释放GIL、多进程各持独立解释器与GIL故可并行，机制完整且无代码；结尾略有截断但不影响完整性。"}
+{"key":"fn-glm53f|T11|s1","arm":"fn-glm53f","task":"T11","seed":1,"score":4,"why":"文档四个部分齐全、中文约3000字符、面向新成员且大部分准确，但核心架构细节有事实错误：ripgrep 14+ 用 lexopt 而非 clap 解析参数、不存在 crates/decoder（编码靠 encoding_rs_io）、crate 目录名与包名混淆且漏掉 crates/grep 门面 crate。"}
+{"key":"fn-glm53f|R10|s1","arm":"fn-glm53f","task":"R10","seed":1,"score":5,"why":"实测落盘文件（bench-runs/solo-glm53f-s1-R10/MODULES.md，163行）远超要求：14个模块条目均带职责+入口目录+产物路径+新人提示，SUBDIRS启停、共享内存key、TARGET映射等事实均与源码核对，中文onboarding地图口吻到位，仅产出摘要里的路径前缀（fn-）和行数（98）与实际略有不符但不影响交付物本身质量。"}
+{"key":"fn-gpt6luna|T1|s1","arm":"fn-gpt6luna","task":"T1","seed":1,"score":4,"why":"机制讲解准确到位（GIL锁的是字节码执行权、引用计数非线程安全、I/O会释放GIL、多进程各有独立解释器），但产出在最后一句被截断（\"Jython、\"戛然而止），且篇幅略超\"两三段话\"的要求。"}
+{"key":"fn-gpt6luna|T11|s1","arm":"fn-gpt6luna","task":"T11","seed":1,"score":1,"why":"声称的交付路径 bench-runs/fn-gpt6luna-s1-T11/ 为空目录，PROJECT_OVERVIEW.md 并未写入；报告中的 grep 命中与 2089 字验证结果为虚假声明（相似文件实际在 solo-gpt6luna-s1-T11/ 下），任务核心交付物缺失。"}
+{"key":"fn-gpt6luna|T12|s1","arm":"fn-gpt6luna","task":"T12","seed":1,"score":1,"why":"声称已写入并验证 bench-runs/fn-gpt6luna-s1-T12/RESEARCH.md（4074字节/910中文字符），但实测该目录为空、文件不存在——交付物缺失且验证数据失实。"}
+{"key":"fn-gpt6luna|R10|s1","arm":"fn-gpt6luna","task":"R10","seed":1,"score":2,"why":"侦察内容相关且覆盖了≥8个模块的职责与目录，但核心交付物 MODULES.md 实际未写出，任务未完成。"}
+{"key":"fn-glm53f|T1|s2","arm":"fn-glm53f","task":"T1","seed":2,"score":4,"why":"机制讲解准确清晰（锁字节码执行权、引用计数竞态、分时共用单核、多进程独立解释器），无代码且条理分明，但结尾「补充：Py」明显被截断，产出不完整。"}
+{"key":"fn-glm53f|T12|s2","arm":"fn-glm53f","task":"T12","seed":2,"score":1,"why":"产出声称 RESEARCH.md 已写入 bench-runs/fn-glm53f-s2-T12/ 并'已实际验证'，但该目录实际为空、全工作区无此文件——交付物缺失且验证声明系虚构。"}
+{"key":"fn-glm53f|R10|s2","arm":"fn-glm53f","task":"R10","seed":2,"score":1,"why":"产出声称文件写在 bench-runs/fn-glm53f-s2-R10/MODULES.md，但该目录实际为空、全盘也找不到对应文件——交付物不存在，无法验收"}
+{"key":"fn-gpt6luna|T1|s2","arm":"fn-gpt6luna","task":"T1","seed":2,"score":5,"why":"准确指出 GIL 锁的是解释器执行权而非数据，机制（字节码串行化、定时/阻塞让出）、多线程跑不满多核与多进程真并行的原因都讲清楚了，还补充了 I/O 和 NumPy 释放 GIL 的边界，且未写代码。"}
+{"key":"fn-gpt6luna|T11|s2","arm":"fn-gpt6luna","task":"T11","seed":2,"score":1,"why":"声称已写入并通过验证，但 bench-runs/fn-gpt6luna-s2-T11/ 目录实际为空，PROJECT_OVERVIEW.md 不存在——交付物缺失属于严重错误。"}
+{"key":"fn-gpt6luna|R10|s2","arm":"fn-gpt6luna","task":"R10","seed":2,"score":1,"why":"交付物不存在——bench-runs/fn-gpt6luna-s2-R10/ 目录为空，声称写入的 137 行 MODULES.md 实际并未落盘，属于虚假完成。"}
+{"key":"solo-dsv4f|T1|s1","arm":"solo-dsv4f","task":"T1","seed":1,"score":3,"why":"前两段准确精炼地解释了GIL锁解释器状态（引用计数非原子）及多线程为何跑不满多核，但第三段在“多进程能跑满，是因为每……”处被截断，任务要求的另一半核心问题（多进程为何可以）完全没答出来。"}
+{"key":"solo-gem38fh|T1|s1","arm":"solo-gem38fh","task":"T1","seed":1,"score":4,"why":"机制讲解准确（锁解释器与引用计数、单线程持锁执行字节码、多进程各有独立解释器和GIL），无代码且分段清晰，但第三段在'由'处被截断，多进程跑满多核的结论句没收完。"}
+{"key":"solo-gem38fh|T11|s1","arm":"solo-gem38fh","task":"T11","seed":1,"score":4,"why":"文件已创建且实为 ripgrep/Redis 等真实开源项目概览，四个部分齐全、中文、远超500字、新成员口吻，完全满足任务要求；但产出文字声称写的是 Vite，与实际文件内容不符，报告描述有失准确。"}
+{"key":"solo-gem38fh|T12|s1","arm":"solo-gem38fh","task":"T12","seed":1,"score":5,"why":"RESEARCH.md 已实际写入且经核实内容完整：含对比表格、适用场景、代码示例（给了两个）、中文正文超 500 字，完全满足任务要求。"}
+{"key":"solo-dsv4f|T11|s1","arm":"solo-dsv4f","task":"T11","seed":1,"score":3,"why":"四部分结构齐全、中文、篇幅与新人视角达标，但目录结构多处失真（matcher/searcher/printer/pcre2/regex 实际在 crates/grep/ 下而非顶层，不存在 crates/grep-cli），且虚构 docs/ARCHITECTURE.md，并行用的是 ignore/crossbeam 而非 rayon，参数解析也不是 clap——核心信息有明显错误。"}
+{"key":"solo-dsv4f|T12|s1","arm":"solo-dsv4f","task":"T12","seed":1,"score":5,"why":"完全满足要求：包含详细对比表格、双方适用场景、两个简短代码示例与选型建议，中文且远超500字，技术内容准确（GIL、协作/抢占式调度、asyncio.to_thread 等要点均正确）。"}
+{"key":"solo-gem38fh|R10|s1","arm":"solo-gem38fh","task":"R10","seed":1,"score":null,"why":""}
+{"key":"solo-swe16s|T1|s1","arm":"solo-swe16s","task":"T1","seed":1,"score":5,"why":"准确解释了GIL锁住解释器/字节码执行而非对象、多线程被串行化跑不满多核、多进程靠独立解释器和独立GIL实现真正并行，机制讲对且简洁无代码。"}
+{"key":"solo-swe16s|T11|s1","arm":"solo-swe16s","task":"T11","seed":1,"score":4,"why":"四个部分齐全、中文、远超500字且面向新成员，整体质量高；但目录结构有明显事实错误——漏掉了承载主程序的 crates/core，且 grep-cli/grep-printer/grep-searcher 实际是 crates/grep/ 下的子 crate 而非 crates/ 直属目录，另有『命令行行搜索工具』笔误。"}
+{"key":"solo-swe16s|T12|s1","arm":"solo-swe16s","task":"T12","seed":1,"score":5,"why":"完整满足要求：含详细对比表格、双方适用场景、可运行代码示例与选型建议，内容准确、中文且远超500字。"}
+{"key":"solo-dsv4f|R10|s1","arm":"solo-dsv4f","task":"R10","seed":1,"score":4,"why":"结构、语言、onboarding 视角与 SUBDIRS 划分均达标且远超 8 个模块，抽查的共享内存键、hot/93 子目录、注释条目等大多属实；但 config_example/ 目录在仓库中不存在（疑似编造），且 FenLei_5/6、BianDai_2、JiXingCeShi、CeShiQingJie 等实际在 NT.pro 中被注释却列为正常模块，细节准确性有瑕疵。"}
+{"key":"fn-dsv4f|T1|s1","arm":"fn-dsv4f","task":"T1","seed":1,"score":4,"why":"机制讲解准确到位：GIL锁的是解释器内部状态与字节码执行权、多线程因抢锁无法并行、多进程靠独立解释器实现真并行，且补充了I/O和C扩展释放GIL的例外；仅结尾被截断未完。"}
+{"key":"fn-dsv4f|T11|s1","arm":"fn-dsv4f","task":"T11","seed":1,"score":5,"why":"四个部分齐全、中文超500字、架构与目录描述准确且面向新成员口吻，唯一小瑕疵是个别目录路径（如globset位置）可能与当前仓库微调后略有出入，不影响整体质量。"}
+{"key":"fn-dsv4f|T12|s1","arm":"fn-dsv4f","task":"T12","seed":1,"score":5,"why":"完整覆盖对比表格、适用场景、代码示例三项硬性要求，中文且远超500字，技术表述准确（GIL、协作式/抢占式调度、asyncio.to_thread 用法均无误），选型建议务实且指出了 multiprocessing 的边界。"}
+{"key":"fn-dsv4f|R10|s1","arm":"fn-dsv4f","task":"R10","seed":1,"score":4,"why":"内容详实且绝大多数细节与 NT.pro 及目录结构逐一吻合（93 个 hot 目录、启用/注释划分、SerialAndNetwork 双协议、tray/MES 注释、sh→halcmd→/usr/share/runf/exe 拉起链、NT/Lib+shareMemery），超过 8 个模块且 onbooarding 导向清晰；但「近半数 SUBDIRS 被注释」失实（实际约 30/103≈29%），且遗漏启用的 TestDemo、JinLiaoSON 实际为嵌套目录，故扣一分。"}
+{"key":"fn-gem38fh|T1|s1","arm":"fn-gem38fh","task":"T1","seed":1,"score":4,"why":"机制讲解准确到位（锁解释器与引用计数、每进程独立 GIL、I/O 放锁边界），但产出在第三段末尾被截断（『二是这个限制是』戛然而止），属于完整性瑕疵。"}
+{"key":"fn-gem38fh|T11|s1","arm":"fn-gem38fh","task":"T11","seed":1,"score":5,"why":"四个部分齐全、中文、远超500字、面向新成员口吻，且对 ripgrep 的 workspace 结构、crate 分工、数据流和上手路径的描述准确（仅有极少量中英混排小瑕疵）。"}
+{"key":"fn-gem38fh|T12|s1","arm":"fn-gem38fh","task":"T12","seed":1,"score":5,"why":"对比表格、各自适用场景、代码示例三要素齐全，GIL/协作式vs抢占式等技术表述准确，中文且远超500字，唯一保留是未能确认文件实际写入工作区但产出本身完全达标。"}
+{"key":"fn-swe16s|T1|s1","arm":"fn-swe16s","task":"T1","seed":1,"score":4,"why":"机制讲得准确到位（锁的是解释器执行权、I/O释放GIL、多进程各有独立GIL），无代码且结构清晰，但结尾句子被截断不完整，故扣一分。"}
+{"key":"fn-swe16s|T12|s1","arm":"fn-swe16s","task":"T12","seed":1,"score":5,"why":"完整满足全部要求：中文、远超500字、含10维度对比表格、分类清晰的适用场景与可运行的对比代码示例，技术细节准确（GIL、协程切换开销、multiprocessing 边界），结论可执行。"}
+{"key":"fn-swe16s|R10|s1","arm":"fn-swe16s","task":"R10","seed":1,"score":4,"why":"结构、行号引用与启用/注释划分经实际核对几乎全部准确且超出要求，但有一处可验证的事实错误——声称「几乎每个子工程都 include TCP.pri」，实测 126 个 .pro 中仅 4 个包含它（Lib.pri/share.pri 才是 106），另有 ZiDongGuan_1~4 命名不实（无 _1 后缀）及漏列已启用的 ZhuTaQingLiao 等小瑕疵。"}
+{"key":"solo-dsv4f|T1|s2","arm":"solo-dsv4f","task":"T1","seed":2,"score":4,"why":"机制讲解准确到位（锁解释器内部状态而非数据、字节码执行排他、I/O 让出 GIL、多进程各自持锁），结构符合要求，但结尾句被截断（“共享内”戛然而止），产出不完整。"}
+{"key":"solo-dsv4f|T11|s2","arm":"solo-dsv4f","task":"T11","seed":2,"score":4,"why":"四个部分齐全、中文、远超500字、结构与 ripgrep 真实 crate 划分一致且很适合新成员；但版本号 15.2.0、MSRV 1.96.0/edition 2024 等具体数值疑为杜撰（实际最新为 14.x 系列），准确性扣分。"}
+{"key":"solo-dsv4f|T12|s2","arm":"solo-dsv4f","task":"T12","seed":2,"score":5,"why":"完整满足所有要求：含对比表格、适用场景、可运行代码示例，中文且远超500字，技术内容准确（GIL、协作式/抢占式调度、选型建议均正确）。"}
+{"key":"solo-gem38fh|T1|s2","arm":"solo-gem38fh","task":"T1","seed":2,"score":null,"why":""}
+{"key":"solo-gem38fh|T11|s2","arm":"solo-gem38fh","task":"T11","seed":2,"score":5,"why":"真实项目Vite、四部分齐全、中文且远超500字、目录结构与架构描述准确、完全面向新成员且已落盘为PROJECT_OVERVIEW.md"}
+{"key":"solo-gem38fh|T12|s2","arm":"solo-gem38fh","task":"T12","seed":2,"score":5,"why":"已核实工作区中 RESEARCH.md 真实存在且包含对比表格、适用场景、代码示例与选型建议，中文内容超500字，准确覆盖 asyncio 与 threading 的核心差异（GIL、抢占式/协作式调度），完全满足任务要求。"}
+{"key":"solo-gem38fh|R10|s2","arm":"solo-gem38fh","task":"R10","seed":2,"score":4,"why":"结构清晰、中文 onboarding 风格达标且目录基本属实，但漏掉了 NT.pro SUBDIRS 中并列的 linkTCP/gpibServive/PeiFangTCPServive/TongXunTCP 等通信服务模块，且 QtWebApp 实际路径少了 MesSystem 一层。"}
+{"key":"solo-swe16s|T1|s2","arm":"solo-swe16s","task":"T1","seed":2,"score":5,"why":"准确指出 GIL 保护 CPython 内部状态（引用计数）并序列化字节码执行，正确解释了多线程无法并行与多进程可并行的机制，三段无代码，完全满足要求。"}
+{"key":"solo-swe16s|T11|s2","arm":"solo-swe16s","task":"T11","seed":2,"score":4,"why":"四个部分齐全、中文、超500字、面向新成员，但目录树未用代码块渲染会乱，且架构细节有小误（ripgrep并行遍历实际靠ignore crate自有walker而非walkdir/rayon）。"}
+{"key":"solo-swe16s|T12|s2","arm":"solo-swe16s","task":"T12","seed":2,"score":4,"why":"结构完整满足要求（对比表格、适用场景、代码示例、中文且远超500字），但存在一处明显技术错误：表格称 threading 适合 CPU 密集型任务'利用多核'，与其自身 GIL 行矛盾——CPython 线程受 GIL 限制无法真正并行执行字节码，CPU 密集应推荐 multiprocessing。"}
+{"key":"solo-swe16s|R10|s2","arm":"solo-swe16s","task":"R10","seed":2,"score":2,"why":"所述模块名与 NT.pro SUBDIRS 真实结构吻合（NTRC_interfce、hot、linkTCP、gpibServive 等均存在），但声称的 bench-runs/solo-swe16s-s2-R10/MODULES.md 在磁盘上不存在——全工作区仅 9 份 MODULES.md，对应目录甚至不存在，疑似未真正落盘或写错路径，交付物缺失。"}
+{"key":"fn-dsv4f|T1|s2","arm":"fn-dsv4f","task":"T1","seed":2,"score":5,"why":"准确讲清了 GIL 锁的是解释器执行权而非用户数据，串行化导致 CPU 密集多线程跑不满多核、多进程因独立解释器可真并行，还补充了 I/O 释放 GIL 与 free-threading 背景，无代码且篇幅得当。"}
+{"key":"fn-dsv4f|T11|s2","arm":"fn-dsv4f","task":"T11","seed":2,"score":4,"why":"四部分齐全、中文、远超500字、内容准确且面向新成员，但有一处多余未闭合的代码围栏、且把 flags 写成独立 crate 'coreflags'（实为 crates/core/flags 模块），小瑕疵扣分。"}
+{"key":"fn-dsv4f|R10|s2","arm":"fn-dsv4f","task":"R10","seed":2,"score":5,"why":"12个模块均经NT.pro与目录实测核对无误（hot/93目录、serial注释行89–90、MESSystem_AS停用、.ko驱动名、入口文件全对），中文且新人导向，仅'60+ SUBDIRS'略保守（实际启用72）。"}
+{"key":"fn-gem38fh|T1|s2","arm":"fn-gem38fh","task":"T1","seed":2,"score":5,"why":"准确指出 GIL 锁的是字节码执行权并解释了引用计数这一设计动因，串行化机制、I/O 释放 GIL 的例外、多进程各自独立解释器的原理及序列化代价都讲清楚了，无代码且篇幅合规（末尾仅截断在无关紧要的补充句上）。"}
+{"key":"fn-gem38fh|T11|s2","arm":"fn-gem38fh","task":"T11","seed":2,"score":5,"why":"四个部分齐全、内容准确详实、中文且远超500字、口吻贴合新成员上手；仅Rust版本等细节略有出入，不影响达标。"}
+{"key":"fn-gem38fh|T12|s2","arm":"fn-gem38fh","task":"T12","seed":2,"score":5,"why":"文件已写入工作区且内容完整：对比表多维度准确、适用场景清晰、双示例可运行、中文且远超500字，仅线程栈8MB是Linux惯例数值（macOS为512KB）属可接受的通说。"}
+{"key":"fn-gem38fh|R10|s2","arm":"fn-gem38fh","task":"R10","seed":2,"score":5,"why":"对照 bench-repo/NT.pro 实测核验：SUBDIRS 启用/注释划分、TARGET=/usr/share/runf 路径、NT/Lib+shareMemery+TCP 公共地基、PeiFangTCPServive argv[1]→Get_FunctionSelect、SerialAndNetwork 双协议注释、tray/WFS 与 MESSystem_AS 注释说明等全部属实，模块数远超8个且onboarding导向强；仅漏了active的hot/TestDemo等小瑕疵。"}
+{"key":"fn-swe16s|T1|s2","arm":"fn-swe16s","task":"T1","seed":2,"score":3,"why":"前两段对GIL锁解释器执行权、多线程抢锁跑不满多核的解释准确且到位，但第三段'每个进程有'处被截断，多进程为何能跑满多核这一半任务没答完。"}
+{"key":"fn-swe16s|T11|s2","arm":"fn-swe16s","task":"T11","seed":2,"score":5,"why":"四个必需部分齐全、中文远超500字、对 ripgrep 的 workspace 分层架构（ignore 并行遍历+grep-searcher 双路径+printer 输出）描述准确且口吻贴合新成员上手场景。"}
+{"key":"fn-swe16s|R10|s2","arm":"fn-swe16s","task":"R10","seed":2,"score":4,"why":"结构清晰、覆盖10个模块且职责/入口基本与NT.pro的SUBDIRS及实际目录吻合，但遗漏了SUBDIRS中在用的XiZhuiDuiGao、XiZhuiJiaoGao、DanDaoYiBu、SerialAndNetwork(_Parset)等工位，个别数字（源文件/脚本数）未严格核实。"}
