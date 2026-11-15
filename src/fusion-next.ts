@@ -1,5 +1,5 @@
 import { bi } from './bilingual.js'
-import { backfillHistory, readHistory } from './host/history.js'
+import { backfillHistory, readHistory, type UsageSummary } from './host/history.js'
 import { homedir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
@@ -323,6 +323,31 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
           const bound = sid ? bindings.read(sid)?.binding : undefined
           return json(res, 200, { worker: pair?.worker ?? null, lead: pair?.lead ?? null,
             selected: Boolean(bound?.selected), catalog: await physicalCatalog() })
+        }
+        if (url.searchParams.get('view') === 'session-usage') {
+          // Per-session token totals for the composer badge: summed over every
+          // usage-index projection for this session's task, split by role so the
+          // client can show lead/worker contribution beside the model selector.
+          const sid = url.searchParams.get('sessionId') ?? ''
+          const binding = sid ? bindings.read(sid)?.binding : undefined
+          const empty = { input: 0, output: 0, cacheRead: 0 }
+          const totals: Record<string, { input: number; output: number; cacheRead: number }> = {}
+          const total = { ...empty }
+          if (binding) {
+            for (const id of store.listDocumentIds(`usage-index:${binding.taskId}:`)) {
+              const row = store.readDocument(id)?.value as UsageSummary | undefined
+              if (!row || row.taskId !== binding.taskId) continue
+              const role = row.role || 'lead'
+              const bucket = totals[role] ?? (totals[role] = { ...empty })
+              for (const key of ['input', 'output', 'cacheRead'] as const) {
+                const count = row[key]
+                if (count?.state === 'known') { bucket[key] += count.tokens; total[key] += count.tokens }
+              }
+            }
+          }
+          const inputTotal = total.input + total.cacheRead
+          return json(res, 200, { paired: Boolean(binding?.selected), roles: totals, total,
+            cacheHit: inputTotal > 0 ? total.cacheRead / inputTotal : null })
         }
         if (url.searchParams.get('view') === 'running') {
           // All sessions with a selected fusion binding, for the global panel.

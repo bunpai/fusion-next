@@ -7,6 +7,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-model-selection/client'
 import { FusionSettings } from './FusionSettings.js'
 import { FusionDockAttention, FusionHint } from './FusionHint.js'
 import { FusionPairPicker } from './FusionPairPicker.js'
+import { FusionUsageBadge } from './FusionUsageBadge.js'
 import { FusionTool, fusionControlTools } from './FusionTool.js'
 import { FusionConsole } from './FusionConsole.js'
 import { FusionNextIcon, FusionPanel } from './FusionPanel.js'
@@ -46,6 +47,12 @@ export function apply(ctx: Context): void {
       name: 'conversation.input.right', id: 'fusion-next-executor', order: 5,
       inject: directoryInject,
     }, FusionPairPicker))
+    // Token badge after the executor picker: this session's lead+worker
+    // token spend and cache-hit rate, from the plugin's usage ledger.
+    scope.slots.inject('conversation.input.right', () => scope.slots.register({
+      name: 'conversation.input.right', id: 'fusion-next-usage', order: 6,
+      inject: directoryInject,
+    }, FusionUsageBadge))
     scope.slots.inject('conversation.input.dock', () => scope.slots.register({
       name: 'conversation.input.dock', id: 'fusion-next-attention', order: 19,
       inject: directoryInject,
