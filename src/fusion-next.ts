@@ -330,8 +330,9 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
           // client can show lead/worker contribution beside the model selector.
           const sid = url.searchParams.get('sessionId') ?? ''
           const binding = sid ? bindings.read(sid)?.binding : undefined
-          const empty = { input: 0, output: 0, cacheRead: 0 }
-          const totals: Record<string, { input: number; output: number; cacheRead: number }> = {}
+          const empty = { input: 0, output: 0, cacheRead: 0, calls: 0 }
+          const totals: Record<string, { input: number; output: number; cacheRead: number; calls: number }> = {}
+          const models: Record<string, { input: number; output: number; cacheRead: number; calls: number; role: string }> = {}
           const total = { ...empty }
           if (binding) {
             for (const id of store.listDocumentIds(`usage-index:${binding.taskId}:`)) {
@@ -339,14 +340,17 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
               if (!row || row.taskId !== binding.taskId) continue
               const role = row.role || 'lead'
               const bucket = totals[role] ?? (totals[role] = { ...empty })
+              const modelKey = `${row.provider}/${row.model}`
+              const mb = models[modelKey] ?? (models[modelKey] = { ...empty, role })
               for (const key of ['input', 'output', 'cacheRead'] as const) {
                 const count = row[key]
-                if (count?.state === 'known') { bucket[key] += count.tokens; total[key] += count.tokens }
+                if (count?.state === 'known') { bucket[key] += count.tokens; mb[key] += count.tokens; total[key] += count.tokens }
               }
+              bucket.calls++; mb.calls++; total.calls++
             }
           }
           const inputTotal = total.input + total.cacheRead
-          return json(res, 200, { paired: Boolean(binding?.selected), roles: totals, total,
+          return json(res, 200, { paired: Boolean(binding?.selected), roles: totals, models, total,
             cacheHit: inputTotal > 0 ? total.cacheRead / inputTotal : null })
         }
         if (url.searchParams.get('view') === 'running') {
