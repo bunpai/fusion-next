@@ -34,16 +34,20 @@ export function FusionUsageBadge({ sessionId }: { sessionId: string }) {
     return () => { live = false; clearInterval(timer) }
   }, [sessionId])
 
-  const total = usage?.total
-  const tokens = total ? total.input + total.cacheRead + total.output : 0
-  if (!usage?.paired || !tokens) return null
-
-  const pct = usage.cacheHit === null ? null : Math.round(usage.cacheHit * 100)
-  const lead = usage.roles.lead ?? { input: 0, output: 0, cacheRead: 0 }
+  if (!usage?.paired) return null
   const worker = usage.roles.worker ?? { input: 0, output: 0, cacheRead: 0 }
+  const tokens = worker.input + worker.cacheRead + worker.output
+  if (!tokens) return null
+  // Host's built-in meter already covers the lead; the badge shows only the
+  // executor (worker) spend so the two never double-count in the same row.
+  const wInput = worker.input + worker.cacheRead
+  const pct = wInput > 0 ? Math.round(worker.cacheRead / wInput * 100) : null
+  const lead = usage.roles.lead ?? { input: 0, output: 0, cacheRead: 0 }
   const sum = (b: RoleTokens) => b.input + b.cacheRead + b.output
-  const tip = `${tr(lang, '规划 lead', 'lead')}: ${fmt(sum(lead))} tok\n${tr(lang, '执行 worker', 'worker')}: ${fmt(sum(worker))} tok`
-    + (pct === null ? '' : `\n${tr(lang, '缓存命中', 'cache hit')}: ${pct}%`)
+  const tip = `${tr(lang, '执行 worker', 'worker')}: ${fmt(tokens)} tok`
+    + (pct === null ? '' : ` (${tr(lang, '缓存', 'cache')} ${pct}%)`)
+    + `\n${tr(lang, '规划 lead', 'lead')}: ${fmt(sum(lead))} tok`
+    + `\n${tr(lang, '合计', 'total')}: ${fmt(tokens + sum(lead))} tok`
   return (
     <span className="fusion-usage" title={tip}>
       {fmt(tokens)} tok{pct === null ? '' : ` · ${pct}%`}
