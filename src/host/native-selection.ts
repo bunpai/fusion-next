@@ -122,6 +122,13 @@ export function installNativeFusionSelection(ctx: Context, input: {
    * session-pair document's lead field (idempotent compare before write).
    */
   leadChanged?(sessionId: string, lead: PhysicalRoute): void
+  /**
+   * Lazily create the coordinator for a session-pair activation when no
+   * configured profile or previously selected binding warmed the runtime yet
+   * (fresh installs pair per session before any global pair exists). Resolved
+   * with the session profile built from the current lead+worker routes.
+   */
+  ensureCoordinator?(sessionId: string, lead: PhysicalRoute, worker: PhysicalRoute): Promise<void>
 }): () => void {
   const pending = new Map<string, Promise<void>>()
   const failures = new Map<string, string>()
@@ -232,7 +239,11 @@ export function installNativeFusionSelection(ctx: Context, input: {
         if (!input.workerOf?.(agent.session.id)) throw new Error('先停止当前 Fusion 任务，再切换模型。')
       } else if (route !== undefined && input.workerOf?.(agent.session.id)) {
         // The executor was configured without a model/selection event having
-        // run yet — activate Fusion lazily on this first turn.
+        // run yet — activate Fusion lazily on this first turn. Fresh installs
+        // may not have a coordinator yet (no saved settings, no prior binding),
+        // so materialise it from the session pair before change() can select.
+        const worker = input.workerOf(agent.session.id)!
+        if (!input.coordinator()) await input.ensureCoordinator?.(agent.session.id, route, worker)
         change(agent)
       }
       return config

@@ -278,6 +278,13 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     // failing activation surfaces as an explicit request error.
     activate: fusionActivate, suspend: fusionSuspend,
     workerOf, sessionProfile, leadChanged,
+    // Fresh installs pair per session before any global settings are saved or
+    // a binding warms the runtime — without this the coordinator stays
+    // undefined and the lazy activation in the request seam silently no-ops.
+    ensureCoordinator: async (sessionId, lead, worker) => {
+      const resolved = sessionProfile(sessionId, lead, worker)
+      await getRuntime(resolved)
+    },
     // Physical routes applied via agent.model.select() journal an echo event;
     // the listener must recognise it instead of reading it as a menu action.
     appliedRoutes: { read: agentId => appliedPhysicalRoutes.get(agentId) },
