@@ -1,41 +1,31 @@
-# Install Fusion
+# Install Fusion Next
 
 [中文](INSTALL.zh.md) · Product pages: [README.md](README.md) (中文), [README.en.md](README.en.md)
 
-Requires **DeepSeek Harness 0.2.0-rc.2 or 0.2.1-rc.2**. Other versions are not supported.
+Requires **DeepSeek Harness ≥ 0.2.0-rc.2** (verified on DSH NEXT 0.2.2-rc.1).
 
 ## DSH Studio desktop app (recommended)
 
 Click **Plugins** in the left sidebar → **Add plugin**, and enter in "Package name or address":
 
 ```text
-fusion-next@0.2.9
+https://github.com/bunpai/fusion-next/releases/download/v0.1.1/fusion-next-0.1.1.tgz
 ```
 
-The release includes the built `lib/`; no clone or build is needed. Then quit and reopen DSH Studio (plugins take effect at the next start).
+The release ships the built `lib/`; no clone or build is needed. Then quit and reopen DSH Studio (plugins take effect at the next start).
 
 ## Web CLI
 
 ```sh
-dsh plugin --profile web add fusion-next@0.2.9
+dsh plugin --profile web add https://github.com/bunpai/fusion-next/releases/download/v0.1.1/fusion-next-0.1.1.tgz
 ```
 
-If `dsh` is not on PATH, pin one supported CLI: `npx @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile web add fusion-next@0.2.9` or `npx @deepseek-ai/dsh@0.2.1-rc.2 plugin --profile web add fusion-next@0.2.9`.
-This writes only the `web` profile. Reopen a running Web Host once and reload the page.
+## From source
 
-## After installing
-
-1. Sign in to at least two models in DSH: a strong Lead and a much cheaper Sidekick. Built-in providers work, and so do the
-   subscription routes of [dsh-oauth-login](https://github.com/aa2246740/dsh-oauth-login).
-2. Open **Settings → Fusion**, choose the Lead and the Sidekick, and save.
-3. Select **Fusion · auto** in the model menu.
-4. On Windows, install PowerShell 7 and make sure `pwsh` is on the PATH used to launch DSH. Windows support was verified with v0.2.1 on Windows Server 2022 (later versions change only platform-independent code or packaging and were re-tested on macOS); Windows 10/11 remain unverified. On Linux, run the read-only check in [README.en.md](README.en.md#support) before real use.
+```text
+github:bunpai/fusion-next
+```
 
 ## Uninstall
 
-```sh
-dsh plugin --profile web remove fusion-next
-```
-
-In the desktop app, uninstall from the **Plugins** page in the left sidebar. Fusion's own records stay in
-`$DSH_HOME/plugins/fusion-next/state.sqlite`; delete that file to remove them.
+Plugins → installed list → Fusion Next → remove. Its records in `$DSH_HOME/plugins/fusion-next/` can be deleted after quitting DSH.
