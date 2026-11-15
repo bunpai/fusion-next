@@ -47,6 +47,13 @@ interface SubagentSeam {
     readonly delivery: 'parent'
     readonly request: WorkerStartRequest
     readonly signal: AbortSignal
+    /** 0.2.2 flat spec shape — host call sites pass parent/prompt/agentOptions
+     *  directly instead of nested under `request`. Sending both keeps 0.2.1
+     *  and 0.2.2 compatible; the unused shape is ignored. */
+    readonly parent?: WorkerStartRequest['parent']
+    readonly prompt?: WorkerStartRequest['prompt']
+    readonly agentOptions?: WorkerStartRequest['agentOptions']
+    readonly maxDepth?: WorkerStartRequest['maxDepth']
   }): Promise<StartedWorker>
   startContinuable?(spec: {
     readonly provider: string
@@ -95,6 +102,9 @@ export class NativeWorkerTransport {
     const accepted = start === 'startActivation'
       ? await subagents.startActivation!({
         provider: this.provider, label: request.label, childId, delivery: 'parent',
+        // 0.2.2-rc.x reads parent/prompt/agentOptions/maxDepth flat on the spec;
+        // 0.2.1 reads them under `request`. Pass both — unused fields are ignored.
+        parent, prompt, agentOptions, maxDepth,
         request: { parent, prompt, agentOptions, maxDepth }, signal,
       })
       : await subagents.startContinuable!({
