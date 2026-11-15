@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-compaction'
+import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { GenerateOptions } from '@deepseek-ai/dsh-llm'
 import { NativeWorkerNotices } from './native-worker-notices.js'
@@ -1375,13 +1376,22 @@ export class FusionCoordinator {
     if (mode === 'implement' && !args.allowedPaths.length) throw new Error('Explicit allowedPaths are required')
     for (const path of args.allowedPaths) workspacePath(base.root, path)
     const origin = this.store.readDocument(`task-origin:${binding.taskId}`)?.value as { firstSeq: number } | undefined
-    const source = agent.session.snapshotEvents().findLast(event => event.seq >= (origin?.firstSeq ?? 0) && event.type === 'user/message'
-      && (event.data.source === undefined || event.data.source.kind === 'user'))
+    // Lazy activation can land the task boundary AFTER the triggering user
+    // message when a turn was already in flight (queued prompts, selection
+    // ordering differences across host builds). When the bounded window has
+    // no instruction, fall back to the last user message overall — it is by
+    // definition the instruction this task began on.
+    const events = agent.session.snapshotEvents()
+    const isUserMessage = (event: SessionEvent) => event.type === 'user/message'
+      && (event.data.source === undefined || event.data.source.kind === 'user')
+    const bounded = events.findLast(event => event.seq >= (origin?.firstSeq ?? 0) && isUserMessage(event))
+    const source = bounded ?? events.findLast(event => isUserMessage(event))
     if (!source || source.type !== 'user/message') throw new Error('No native user instruction source')
     // The user's own words for this task (every user message since the task began).
-    const userTexts = agent.session.snapshotEvents().filter(event => event.seq >= (origin?.firstSeq ?? 0)
-      && event.type === 'user/message' && (event.data.source === undefined || event.data.source.kind === 'user'))
+    const textOf = (event: typeof source) => event.data.content.filter(block => block.type === 'text').map(block => block.text)
+    const boundedTexts = events.filter(event => event.seq >= (origin?.firstSeq ?? 0) && isUserMessage(event))
       .flatMap(event => event.type === 'user/message' ? event.data.content.filter(block => block.type === 'text').map(block => block.text) : [])
+    const userTexts = boundedTexts.length ? boundedTexts : textOf(source)
     const requirements = this.#requirements(binding, mode, args.requirements, userTexts)
     const order: WorkOrder = {
       schemaVersion: 1, mode, taskId: binding.taskId, id: WorkOrderId(randomUUID()), operationId: OperationId(randomUUID()), revision: this.state(binding.taskId).revision,
