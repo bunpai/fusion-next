@@ -107,6 +107,7 @@ export class NativeTaskContext {
       schemaVersion: 1, taskId: state.taskId, revision: state.revision, taskSeq: state.seq,
       role, profileDigest: state.profileDigest,
       inputScope: rawOrigin ? 'current-task-native-user-messages' : 'legacy-all-native-user-messages',
+      models: { lead: binding.profile.lead, worker: binding.profile.worker, compactor: binding.profile.compactor },
       userInstructions: instructions,
       phase: state.phase, intent: state.intent ?? null, control: state.control,
       pendingApprovals: state.pendingApprovals, writer: state.lease ?? null,

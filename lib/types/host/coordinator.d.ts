@@ -114,6 +114,16 @@ export declare function directTurnLeavesWorkOpen(userTexts: readonly string[], a
 /** Literal code spans (`like this`) a requirement asks for; a candidate that omits them gets flagged. */
 export declare const literalSpans: (text: string) => string[];
 /**
+ * `subagent` for the Lead: only the paired executor model may run the child. `subagent_fork`
+ * inherits the parent model, so it cannot route to the executor — deny it and say what to
+ * use instead. The child's own tool surface stays under Host permissions; Fusion adds the
+ * model check so a read delegation actually lands on the cheaper Sidekick model.
+ */
+export declare function subagentAccess(exec: Readonly<ToolExecution>, workerRoute: {
+    provider: string;
+    model: string;
+}): string | undefined;
+/**
  * Existing test files whose original lines were removed or changed (pure additions are not listed). A Worker
  * that rewrites an old test to fit its change hides a regression the maintainers' test would catch
  * (round 4, canvasapi): the Lead must look at these before accepting.

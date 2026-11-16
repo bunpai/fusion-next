@@ -326,6 +326,26 @@ export const literalSpans = (text: string) => [...new Set([...text.matchAll(/`([
 const SEPARATED_LEAD_TOOLS: readonly string[] = [...new Set([...READ_TOOLS, nativeShellTool, ...[...FUSION_NEXT_TOOLS].filter(name =>
   !['fusion_next_takeover', 'fusion_next_submit_result', 'fusion_next_finish_direct'].includes(name))])]
 
+/**
+ * `subagent` for the Lead: only the paired executor model may run the child. `subagent_fork`
+ * inherits the parent model, so it cannot route to the executor — deny it and say what to
+ * use instead. The child's own tool surface stays under Host permissions; Fusion adds the
+ * model check so a read delegation actually lands on the cheaper Sidekick model.
+ */
+export function subagentAccess(exec: Readonly<ToolExecution>, workerRoute: { provider: string; model: string }): string | undefined {
+  if (exec.name === 'subagent_fork') {
+    return 'FUSION_NEXT_LEAD_READ_ONLY: subagent_fork inherits the Lead model and cannot route to the executor. Call subagent with the paired executor provider and model.'
+  }
+  const args = exec.arguments as { provider?: unknown; model?: unknown }
+  if (!args.provider || !args.model) {
+    return `FUSION_NEXT_LEAD_READ_ONLY: call subagent with the paired executor: provider='${workerRoute.provider}' model='${workerRoute.model}'.`
+  }
+  if (args.provider !== workerRoute.provider || args.model !== workerRoute.model) {
+    return `FUSION_NEXT_LEAD_READ_ONLY: the paired executor is ${workerRoute.provider}/${workerRoute.model}; pass those exact provider and model values to subagent.`
+  }
+  return undefined
+}
+
 /** Test files by common conventions (Python, JS/TS, Go, Rust and generic test directories). */
 const TEST_FILE = /(^|\/)(tests?|__tests__|specs?)\/|(^|\/)test_[^/]+\.py$|_test\.(py|go)$|\.(test|spec)\.[cm]?[jt]sx?$|(^|\/)conftest\.py$/i
 
@@ -472,7 +492,7 @@ export class FusionCoordinator {
         const lease = this.#held.get(binding.taskId)
         // leadSandbox=false (operator opt-out): the Lead is a normal model — full toolset, no separation.
         if (roleSeparated(binding) && this.options.leadSandbox === false) return undefined
-        if (roleSeparated(binding)) return this.#leadWriter(binding, agent) ? undefined : this.#separatedLeadTools(state, binding)
+        if (roleSeparated(binding)) return this.#leadWriter(binding, agent) ? undefined : this.#separatedLeadTools(agent, state, binding)
         if (enforcedWorkflow(binding)) {
           if (adaptiveWorkflow(binding) && !state.currentWorkOrder) return undefined
           const takeover = state.currentWorkOrder && this.#runtime(binding.taskId).takeover
@@ -1110,12 +1130,16 @@ export class FusionCoordinator {
    * Every change goes through the Sidekick. The only exception is a takeover the
    * Host unlocks from objective state (#escalation), never the Lead's choice.
    */
-  #separatedLeadTools(_state: TaskState, binding: SessionBinding): readonly string[] {
+  #separatedLeadTools(agent: Agent, _state: TaskState, binding: SessionBinding): readonly string[] {
     // One catalog for the whole conversation. Tools sit in the prompt prefix, so a phase-dependent catalog
     // reset the frontier model's prompt cache at every handoff and review (round 4: 12 changes in one task,
     // Lead cache hit 69% against 94% alone). Phase rules stay enforced where they belong: in each tool and
     // the guard, whose refusals say what to do instead. Takeover appears only once the Host unlocks it.
-    return this.#escalation(binding) ? [...SEPARATED_LEAD_TOOLS, 'fusion_next_takeover'] : SEPARATED_LEAD_TOOLS
+    const base = this.#escalation(binding) ? [...SEPARATED_LEAD_TOOLS, 'fusion_next_takeover'] : SEPARATED_LEAD_TOOLS
+    // subagent is a host tool, not registered by us: include it only when the registry actually has it.
+    return this.ctx.tools?.schemas?.(agent)?.some(tool => tool.name === 'subagent')
+      ? [...base, 'subagent']
+      : base
   }
 
   /** undefined = allow now, string = refuse, false = not decided here (continue the ordinary guard). */
@@ -1129,6 +1153,9 @@ export class FusionCoordinator {
     if (exec.name === 'fusion_next_submit_result' || exec.name === 'fusion_next_finish_direct') {
       return 'FUSION_NEXT_LEAD_READ_ONLY: in this Fusion mode the Lead never writes. Send corrections to the same Sidekick with fusion_next_rework.'
     }
+    // subagent routes a read-only investigation to the paired executor model — the same
+    // delegation Devin's fusion sidekick performs, through the Host's own subagent layer.
+    if (exec.name === 'subagent' || exec.name === 'subagent_fork') return this.#subagentAccess(exec, binding)
     // run_code wraps every tool on hosts that publish the code-mode entry point; the nested calls it makes
     // re-enter this gate individually (nested shell still hits leadShellProblem), so denying the outer call
     // would dead-lock a sandboxed Lead that cannot even reach fusion_next_delegate.
@@ -1145,6 +1172,11 @@ export class FusionCoordinator {
     this.workflow.denyEffect(binding)
     if (shell) return shell
     return 'FUSION_NEXT_LEAD_READ_ONLY: in this Fusion mode the Lead only reads and runs read-only commands. Every workspace change, file write or code execution goes to the Sidekick: use fusion_next_delegate (or fusion_next_delegate_text for writing without a workspace).'
+  }
+
+  /** `subagent` for the Lead delegates to the paired executor model — the same sidekick model Devin's fusion pairs. `subagent_fork` inherits the Lead model and cannot route to the executor — deny it and say what to use instead. */
+  #subagentAccess(exec: Readonly<ToolExecution>, binding: SessionBinding): string | undefined {
+    return subagentAccess(exec, this.routeFor(binding, 'worker'))
   }
 
   /**
