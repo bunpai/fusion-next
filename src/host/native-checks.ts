@@ -386,11 +386,17 @@ async function invokeCheck(input: CheckInput, check: FrozenCheck) {
     if (visible.size === 0) for (const tool of (((ctx.tools as { list?: (a: unknown) => unknown }).list?.(exec.agent) as unknown[] | undefined) ?? [])) named(tool)
   } catch { /* enumeration optional on older hosts */ }
   const shellCandidates = (() => {
-    const all = ['bash', 'pwsh', 'ops_bash', 'ops_run']
+    const override = process.env.FUSION_NEXT_CHECK_SHELLS?.split(',').map(s => s.trim()).filter(Boolean)
+    if (override?.length) return override
+    // ctx.tools.execute resolves against the NATIVE registry only — plugin
+    // tools (ops_*) are unreachable here but kept as last resorts in case a
+    // Host exposes them. Windows shells may be named powershell/cmd.
+    const all = ['bash', 'pwsh', 'powershell', 'cmd', 'ops_bash', 'ops_run']
     const hits = visible.size === 0 ? all : all.filter(name => visible.has(name))
     const list = hits.length ? hits : [nativeShellTool]
     return [...new Set([...list, nativeShellTool])]
   })()
+  const errors: string[] = []
   let shellTool = shellCandidates[0]
   const isUnknownTool = (e: unknown) => {
     const text = e instanceof Error ? `${e.name}: ${e.message}` : String(e)
@@ -429,6 +435,7 @@ async function invokeCheck(input: CheckInput, check: FrozenCheck) {
       })()
       if (settled === undefined) {
         lastError = new Error(`check dispatch returned no result for "${candidate}"`)
+        errors.push(`${candidate}: no result`)
         continue
       }
       const contentText = JSON.stringify(settled?.content ?? '') + JSON.stringify(settled?.value ?? '')
@@ -438,6 +445,7 @@ async function invokeCheck(input: CheckInput, check: FrozenCheck) {
       // candidate shell name.
       if (settled?.isError) {
         lastError = new Error(`tool "${candidate}" errored: ${contentText.slice(0, 500)}`)
+        errors.push(`${candidate}: ${contentText.slice(0, 300)}`)
         continue
       }
       shellTool = candidate
@@ -450,6 +458,7 @@ async function invokeCheck(input: CheckInput, check: FrozenCheck) {
       // error and try the next candidate; the fall-through after the loop
       // records the last error as outcome-unknown.
       lastError = error
+      errors.push(`${candidate}: ${error instanceof Error ? error.message : String(error)}`.slice(0, 300))
       if (!isUnknownTool(error)) {
         const show = (e: unknown, depth: number): string => e instanceof Error ? `${e.name}: ${e.message}\n${e.stack ?? ''}${depth < 5 && 'cause' in e && e.cause ? '\n--cause--> ' + show(e.cause, depth + 1) : ''}` : String(e)
         console.error('[fusion-check-error]', show(error, 0))
@@ -461,7 +470,7 @@ async function invokeCheck(input: CheckInput, check: FrozenCheck) {
     const show = (e: unknown, depth: number): string => e instanceof Error ? `${e.name}: ${e.message}\n${e.stack ?? ''}${depth < 5 && 'cause' in e && e.cause ? '\n--cause--> ' + show(e.cause, depth + 1) : ''}` : String(e)
     console.error('[fusion-check-error]', show(lastError, 0))
     const evidence: ToolEvidence = { ...started, state: 'outcome-unknown', endedAt: new Date().toISOString(),
-      stderr: store.putArtifact(order.taskId, Buffer.from(String(lastError)), 'text/plain') }
+      stderr: store.putArtifact(order.taskId, Buffer.from(`shell candidates tried [${shellCandidates.join(', ')}]\n${errors.join('\n---\n')}\n---\nlast: ${String(lastError)}`), 'text/plain') }
     store.writeDocument(key, 1, { check, evidence })
     input.uncertain?.(evidence)
     throw lastError

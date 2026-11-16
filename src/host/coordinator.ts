@@ -987,7 +987,8 @@ export class FusionCoordinator {
     if (enforcedWorkflow(binding) && role === 'lead' && !isRead(exec) && !FUSION_NEXT_TOOLS.has(exec.name)
       && exec.name !== 'run_code'
       && (!adaptiveWorkflow(binding) || state.currentWorkOrder)) {
-      const check = isShellTool(exec.name) && this.#nestedCheckMatch(exec)
+      const check = (isShellTool(exec.name) || exec.name === 'ops_bash' || exec.name === 'ops_run')
+        && this.#nestedCheckMatch(exec)
       const takeover = state.currentWorkOrder && this.#runtime(binding.taskId).takeover
       if (!check && !takeover) return this.workflow.denyEffect(binding)
     }
@@ -1106,7 +1107,8 @@ export class FusionCoordinator {
     // re-enter this gate individually (nested shell still hits leadShellProblem), so denying the outer call
     // would dead-lock a sandboxed Lead that cannot even reach fusion_next_delegate.
     if (isRead(exec) || FUSION_NEXT_TOOLS.has(exec.name) || exec.name === 'run_code') return false
-    if (isShellTool(exec.name) && this.#nestedCheckMatch(exec)) return false
+    if ((isShellTool(exec.name) || exec.name === 'ops_bash' || exec.name === 'ops_run')
+      && this.#nestedCheckMatch(exec)) return false
     if (isLeadShell(exec.name) && (exec.arguments as { run_in_background?: unknown }).run_in_background === true) {
       this.workflow.denyEffect(binding)
       return 'FUSION_NEXT_LEAD_READ_ONLY: the Lead runs only short foreground inspection commands. Test runs and long commands belong to the Sidekick: delegate them.'
