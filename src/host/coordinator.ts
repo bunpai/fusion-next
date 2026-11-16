@@ -61,9 +61,18 @@ import { readNativeEvidence } from './native-evidence.js'
 const textOutput = { schema: { type: 'string' as const }, render: (_args: unknown, text: string) => [{ type: 'text' as const, text }] }
 const stringList = { type: 'array' as const, items: { type: 'string' as const }, required: true as const }
 const optionalStringList = { type: 'array' as const, items: { type: 'string' as const } }
-const READ_TOOLS = new Set(['fusion_next_read_state', 'glob', 'grep', 'read', 'fusion_next_read_evidence', 'fusion_next_list_evidence', 'job_output'])
-const isRead = (exec: Readonly<ToolExecution>) => READ_TOOLS.has(exec.name)
+const READ_TOOLS = new Set(['fusion_next_read_state', 'glob', 'grep', 'read', 'fusion_next_read_evidence', 'fusion_next_list_evidence', 'job_output', 'job_list'])
+// dsh-ops 风格的工具替换插件把原生只读工具改名成 ops_*；前缀归一后复用原生名单，
+// 另有少数只读工具没有同名原生对应（inspect/stat/diff/status 等），单独列名。
+const OPS_READ_EXTRAS = new Set([
+  'ops_read_files', 'ops_read_many', 'ops_read_docx', 'ops_read_pdf', 'ops_read_table',
+  'ops_inspect_local_file', 'ops_stat', 'ops_diff', 'ops_status', 'ops_discover_tools', 'ops_result',
+])
+export const isRead = (exec: Readonly<ToolExecution>) => READ_TOOLS.has(exec.name)
   || exec.name === 'str_replace_editor' && (exec.arguments as { command?: unknown }).command === 'view'
+  || exec.name.startsWith('ops_') && (READ_TOOLS.has(exec.name.slice(4)) || OPS_READ_EXTRAS.has(exec.name))
+// ops_bash 像原生 shell 一样经过 leadShellProblem：只读沙箱约束下允许 Lead 跑只读命令。
+export const isLeadShell = (name: string) => isShellTool(name) || name === 'ops_bash'
 const FUSION_NEXT_TOOLS = new Set(['fusion_next_read_state', 'fusion_next_delegate_text', 'fusion_next_explore', 'fusion_next_delegate', 'fusion_next_rework', 'fusion_next_wait', 'fusion_next_review_result', 'fusion_next_submit_result', 'fusion_next_takeover', 'fusion_next_finish_direct', 'fusion_next_read_evidence', 'fusion_next_list_evidence'])
 const WORKER_FUSION_TOOLS = new Set(['fusion_next_submit_result', 'fusion_next_read_state', 'fusion_next_read_evidence', 'fusion_next_list_evidence'])
 export interface CoordinatorOptions {
@@ -169,7 +178,7 @@ export function directWriteLines(exec: Readonly<ToolExecution>): number {
   if (exec.name === 'write') return lineCount(args.content)
   if (exec.name === 'edit') return lineCount(args.new_string)
   if (exec.name === 'str_replace_editor') return lineCount(args.file_text) || lineCount(args.new_str)
-  if (isShellTool(exec.name) && typeof args.command === 'string') {
+  if ((isShellTool(exec.name) || exec.name === 'ops_bash') && typeof args.command === 'string') {
     // Heredocs/here-strings and redirected multi-line scripts are file writing by another name;
     // pwsh write cmdlets (Set-Content/Out-File/...) count at least the command itself.
     const writes = /<<-?\s*['"]?\w+/.test(args.command) || /[@]["']\s*\r?\n/.test(args.command)
@@ -991,7 +1000,7 @@ export class FusionCoordinator {
       const root = exec.agent.session.header.cwd
       // No workspace is required for conversational or non-file native tools.
       // Filesystem/shell effects need an identified resource to coordinate.
-      if (!root && (isShellTool(exec.name) || ['write', 'edit', 'str_replace_editor'].includes(exec.name))) return 'This native file operation needs a workspace'
+      if (!root && (isLeadShell(exec.name) || ['write', 'edit', 'str_replace_editor', 'ops_write_file', 'ops_edit_file', 'ops_edit_many', 'ops_replace', 'ops_remove'].includes(exec.name))) return 'This native file operation needs a workspace'
       if (!root) return undefined
       this.append(binding.taskId, 'intent/chosen', { intent: 'DIRECT' })
       try { this.#acquire(binding, root, exec.agent.id, OperationId(randomUUID())) }
@@ -1011,7 +1020,7 @@ export class FusionCoordinator {
         if (conflict) return conflict
       }
     }
-    if (isShellTool(exec.name)) {
+    if (isLeadShell(exec.name)) {
       const args = exec.arguments as { workdir?: string; run_in_background?: boolean }
       if (args.run_in_background) {
         const issue = this.effects.backgroundProblem(exec)
@@ -1098,12 +1107,12 @@ export class FusionCoordinator {
     // would dead-lock a sandboxed Lead that cannot even reach fusion_next_delegate.
     if (isRead(exec) || FUSION_NEXT_TOOLS.has(exec.name) || exec.name === 'run_code') return false
     if (isShellTool(exec.name) && this.#nestedCheckMatch(exec)) return false
-    if (isShellTool(exec.name) && (exec.arguments as { run_in_background?: unknown }).run_in_background === true) {
+    if (isLeadShell(exec.name) && (exec.arguments as { run_in_background?: unknown }).run_in_background === true) {
       this.workflow.denyEffect(binding)
       return 'FUSION_NEXT_LEAD_READ_ONLY: the Lead runs only short foreground inspection commands. Test runs and long commands belong to the Sidekick: delegate them.'
     }
-    const shell = isShellTool(exec.name) ? this.roleSandbox.leadShellProblem(exec) : undefined
-    if (isShellTool(exec.name) && !shell) return undefined
+    const shell = isLeadShell(exec.name) ? this.roleSandbox.leadShellProblem(exec) : undefined
+    if (isLeadShell(exec.name) && !shell) return undefined
     // Record the refusal so a text-only answer cannot mark undelegated work complete.
     this.workflow.denyEffect(binding)
     if (shell) return shell
