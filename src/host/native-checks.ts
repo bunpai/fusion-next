@@ -414,10 +414,23 @@ async function invokeCheck(input: CheckInput, check: FrozenCheck) {
         calls: [call], name: call.name, arguments: call.name === 'run_code' ? runCodeArgs : checkArgs,
         agent: exec.agent, signal: exec.signal } as Parameters<typeof ctx.tools.execute>[0])
       // Batch runtimes settle per-call results under .results[]; single-call
-      // runtimes return the result object itself.
-      const settled = (raw && typeof raw === 'object' && 'results' in raw && Array.isArray((raw as { results?: unknown }).results)
-        ? (raw as { results: { callId: string; result: unknown }[] }).results.find((entry) => entry.callId === callId)?.result
-        : raw) as typeof result
+      // runtimes return the result object itself. Entry key shapes vary by
+      // Host revision — entries may be keyed by callId or id, and the settled
+      // payload may live under result/value or be the entry itself.
+      const settled = (() => {
+        if (raw && typeof raw === 'object' && 'results' in raw && Array.isArray((raw as { results?: unknown }).results)) {
+          const entries = (raw as { results: { callId?: string; id?: string; result?: unknown; value?: unknown }[] }).results
+          const entry = entries.find((e) => e.callId === callId || e.id === callId)
+            ?? (entries.length === 1 ? entries[0] : undefined)
+          if (entry === undefined) return undefined
+          return (entry.result ?? entry.value ?? entry) as typeof result
+        }
+        return raw as typeof result
+      })()
+      if (settled === undefined) {
+        lastError = new Error(`check dispatch returned no result for "${candidate}"`)
+        break
+      }
       const contentText = JSON.stringify(settled?.content ?? '') + JSON.stringify(settled?.value ?? '')
       if (settled?.isError && /unknown tool|not a function|cannot find/i.test(contentText)) {
         lastError = new Error(`unknown tool "${candidate}"`)
@@ -469,8 +482,10 @@ async function invokeCheck(input: CheckInput, check: FrozenCheck) {
   const raw = record(ptcDispatch ? unwrapShellValue(result.value) : result.value)
   const stdout = record(raw?.stdout), stderr = record(raw?.stderr)
   const nativeForeground = !result.isError && raw?.kind === 'foreground'
-  const completed = nativeForeground && raw.aborted === false && raw.timedOut === false
-    && raw.signal === null && typeof raw.exitCode === 'number'
+  // Tolerate field drift across shell providers: missing aborted/timedOut/
+  // signal fields read as "not aborted" — only explicit truthy/非空 values block.
+  const completed = nativeForeground && raw.aborted !== true && raw.cancelled !== true && raw.timedOut !== true
+    && (raw.signal === null || raw.signal === undefined) && typeof raw.exitCode === 'number'
   const outText = typeof stdout?.text === 'string' ? stdout.text : ''
   const errText = typeof stderr?.text === 'string' ? stderr.text : JSON.stringify(result.content)
   const after = snapshotWorkspace(root)
