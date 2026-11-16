@@ -24,6 +24,8 @@ import { NativeWorkerTransport } from './native-worker.js';
 import { NativeFusionActivity } from './native-activity.js';
 import { CachePolicy } from './cache-policy.js';
 import type { ChangeBase } from './change-evidence.js';
+export declare const isRead: (exec: Readonly<ToolExecution>) => boolean;
+export declare const isLeadShell: (name: string) => name is "bash" | "pwsh" | "ops_bash";
 export interface CoordinatorOptions {
     profile: ResolvedProfile;
     workerTools: readonly string[];
@@ -162,7 +164,15 @@ export declare class FusionCoordinator {
     select(agent: Agent, resolved?: ResolvedProfile): Promise<void>;
     /** Only at idle selection or native running reservation, before prompt assembly. */
     selectBeforeAssembly(agent: Agent, resolved: ResolvedProfile): void;
-    clear(agent: Agent): Promise<void>;
+    /**
+     * `abandon` releases the binding and restores the Lead sandbox even when the
+     * task has unreconciled effects (the user is giving up, not delegating): the
+     * task row keeps its outcome-unknown state for inspection, the workspace is
+     * what it is. The GUI off-switch and `pair off` remain strict.
+     */
+    clear(agent: Agent, options?: {
+        abandon?: boolean;
+    }): Promise<void>;
     wait(agent: Agent, exec: ToolRunContext): Promise<string>;
     delegate(agent: Agent, args: DelegateInput, exec: ToolRunContext, mode?: 'explore' | 'implement' | 'text'): Promise<string>;
     rework(agent: Agent, feedback: string, exec: ToolRunContext, block?: boolean, checks?: readonly CheckDefinition[], addAllowedPaths?: readonly string[]): Promise<string>;

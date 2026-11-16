@@ -480,7 +480,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
             fusionSuspend(sessionId)
             const agent = ctx.agents.get(SessionId(sessionId))
             const controller = await getRuntime({ profile: binding.profile, prompts: binding.prompts })
-            if (agent) { if (agent.status !== 'idle') await controller.pause(agent); await controller.clear(agent) }
+            if (agent) { if (agent.status !== 'idle') await controller.pause(agent); await controller.clear(agent, { abandon: body.force === true }) }
             else bindings.clear(sessionId)
           }
           return json(res, 200, { ok: true, selected: false })
@@ -508,7 +508,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     } catch (error) { return json(res, 409, { error: error instanceof Error ? error.message : String(error) }) }
   } }))
   ctx.effect(() => ctx.commands.register({ name: 'fusion-next', description: bi('Fusion 状态、暂停、恢复与退出（不调用模型）', 'Fusion status, pause, resume and exit (no model call)'),
-    input: { hint: bi('status | pair [<provider>/]<model> | pair off | pause | resume | recover [--effects-stopped] <检查记录> | off', 'status | pair [<provider>/]<model> | pair off | pause | resume | recover [--effects-stopped] <inspection note> | off') },
+    input: { hint: bi('status | pair [<provider>/]<model> | pair off [--force] | pause | resume | recover [--effects-stopped] <检查记录> | off [--force]', 'status | pair [<provider>/]<model> | pair off [--force] | pause | resume | recover [--effects-stopped] <inspection note> | off [--force]') },
     handler: async invocation => {
       const [action = 'status', ...note] = invocation.rawInput.trim().split(/\s+/)
       try {
@@ -533,7 +533,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
               fusionSuspend(sessionId)
               const controller = await getRuntime({ profile: pairBinding.profile, prompts: pairBinding.prompts })
               if (invocation.agent.status !== 'idle') await controller.pause(invocation.agent)
-              await controller.clear(invocation.agent)
+              await controller.clear(invocation.agent, { abandon: note.includes('--force') })
             }
             return { kind: 'success', text: bi('本会话已退出 Fusion 编队，恢复为普通会话。', 'Fusion pair cleared; this session is a normal conversation again.') }
           }
@@ -580,7 +580,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
         } else if (action === 'recover') await controller.reconcile(invocation.agent, { commandId: invocation.commandId,
           effectsStopped: note[0] === '--effects-stopped', note: (note[0] === '--effects-stopped' ? note.slice(1) : note).join(' ') })
         else if (action === 'off') {
-          await controller.clear(invocation.agent)
+          await controller.clear(invocation.agent, { abandon: note.includes('--force') })
           await ctx.sessionController.selectModel({ sessionId: SessionId(invocation.agent.id), ...binding.profile.lead })
         }
         else throw new Error(bi('使用 /fusion-next status、pause、resume、recover <检查记录> 或 off', 'Use /fusion-next status, pause, resume, recover <inspection note> or off'))

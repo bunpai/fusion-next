@@ -778,7 +778,13 @@ export class FusionCoordinator {
     return directTurnLeavesWorkOpen(userTexts, assistantText)
   }
 
-  async clear(agent: Agent): Promise<void> {
+  /**
+   * `abandon` releases the binding and restores the Lead sandbox even when the
+   * task has unreconciled effects (the user is giving up, not delegating): the
+   * task row keeps its outcome-unknown state for inspection, the workspace is
+   * what it is. The GUI off-switch and `pair off` remain strict.
+   */
+  async clear(agent: Agent, options?: { abandon?: boolean }): Promise<void> {
     const binding = this.bindings.read(agent.id)?.binding
     if (!binding?.selected) return
     if (agent.status !== 'idle') throw new Error('Stop the current turn before changing the execution profile')
@@ -792,7 +798,10 @@ export class FusionCoordinator {
       await this.#stopJobs(binding.taskId, async () => {
         if (child) { await this.transport.release(agent, child.id); this.scopes.detach(child) }
       })
-      if (this.#trackingErrors.has(binding.taskId) || state.control.recovering || state.control.outcomeUnknown) throw new Error('Reconcile the recorded effects before clearing Fusion')
+      if (!options?.abandon
+        && (this.#trackingErrors.has(binding.taskId) || state.control.recovering || state.control.outcomeUnknown)) {
+        throw new Error('Reconcile the recorded effects before clearing Fusion')
+      }
       this.#release(binding.taskId)
       this.scopes.detach(agent)
       this.bindings.clear(agent.id)

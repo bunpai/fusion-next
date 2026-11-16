@@ -6,8 +6,8 @@ export interface FusionPairPickerProps {
     load(): void;
 }
 /**
- * Composer executor picker: the session's normal model menu is the planner;
- * this second dropdown sets the executor for this session (bound like a normal
- * model). Closing the executor returns the session to a plain model session.
+ * Composer tool-row executor picker, next to the native model selector: the
+ * session's own model is the planner; picking an executor here turns Fusion
+ * Next on for this session, choosing Off returns it to a plain session.
  */
 export declare function FusionPairPicker({ sessionId, directory, load }: FusionPairPickerProps): import("react").JSX.Element;

@@ -37,8 +37,16 @@ export declare class NativeRoleSandbox {
      * they would inherit the Lead's read-only session. They run under the user's
      * mode; the Lead's own shell stays refused meanwhile because leadShellProblem
      * requires an actual read-only resolution at execution time.
+     * Under PTC every tool runs inside one run_code dispatch and the Host aborts a
+     * dispatch when the session sandbox changes mid-flight — emitting the mode
+     * events below inside the dispatch kills the caller and turns the check effect
+     * 'outcome-unknown'. Checks are read-only commands, so under PTC the dance is
+     * skipped entirely; the next Lead request re-confines through ensure().
      */
-    whileChecking<T>(agent: Agent, binding: SessionBinding, run: () => Promise<T>): Promise<T>;
+    whileChecking<T>(agent: Agent, binding: SessionBinding, run: () => Promise<T>, exec?: {
+        callId?: string;
+        rootCallId?: string;
+    }): Promise<T>;
     /** A Lead shell is allowed only when the Host will actually run it read-only and without escalation. */
     leadShellProblem(exec: Readonly<ToolExecution>): string | undefined;
     /** Put the user's own mode back when the conversation leaves Fusion. */

@@ -1,4 +1,5 @@
 import type { Context } from '@deepseek-ai/cordis'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { SessionId as NativeSessionId } from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
@@ -32,6 +33,11 @@ interface Intent {
   ownSeqs: number[]
   /** False after leaving Fusion; the next selection re-reads the user's current mode. */
   active: boolean
+  /**
+   * Trigger `sandbox/mode` seqs already answered with the read-only notice.
+   * Persisted so a second runtime listener skips its duplicate notice.
+   */
+  noticed?: number[]
 }
 
 export const roleSeparated = (binding: SessionBinding) => binding.profile.workflowPolicy === 'enforced-v3'
@@ -143,6 +149,32 @@ export class NativeRoleSandbox {
     return undefined
   }
 
+  /**
+   * Explain the silent-looking revert on the conversation surface. The message
+   * rides the same plugin notice channel as Worker notices; it is appended
+   * after the re-confine lands so ordering reads cause → effect.
+   */
+  #notice(session: Session) {
+    try {
+      // Cross-instance dedupe: a second runtime listener reads this surface too,
+      // so skip when a mode-revert notice is already on the recent surface.
+      for (const seq of [...session.surface.nodes].reverse()) {
+        const event = session.eventAt(seq)
+        if (!event || event.type !== 'user/message') continue
+        const source = event.data.source as { kind?: string; form?: string } | undefined
+        const block = event.data.content?.find?.((b: { type?: string }) => b.type === 'text') as { text?: string } | undefined
+        const text = block?.text ?? ''
+        if (source?.kind === 'plugin:fusion-next' && source?.form === 'notice'
+          && (text.startsWith('Fusion Next：访问模式') || text.startsWith('Fusion Next reverted'))) return
+        break
+      }
+      session.append('user/message', createUserMessage({
+        content: [{ type: 'text', text: 'Fusion Next：访问模式已恢复为只读，因为执行模型仍开启。若要更改访问模式，请先将执行模型设为关闭。 / Fusion Next reverted the access mode to read-only because an executor is still selected. Set the executor to Off to change it.' }],
+        source: { kind: 'plugin:fusion-next', form: 'notice', summary: 'Fusion Next reverted the Lead access mode to read-only' },
+      }), { surfaceOp: 'append' })
+    } catch { /* notice is best-effort */ }
+  }
+
   /** Put the user's own mode back when the conversation leaves Fusion. */
   restore(agent: Agent): void {
     const intent = this.#intent(agent.id), policy = this.#policy
@@ -167,7 +199,14 @@ export class NativeRoleSandbox {
           const current = this.#intent(session.id)
           if (!current?.active) return
           this.#set(session, 'read-only', current)
-          this.#save(current)
+          // Surface a one-off explanation for this trigger seq; a second runtime
+          // listener reads the persisted seq and skips its own copy.
+          if (!current.noticed?.includes(event.seq)) {
+            (current.noticed ??= []).push(event.seq)
+            if (current.noticed.length > 12) current.noticed.splice(0, current.noticed.length - 12)
+            this.#save(current)
+            this.#notice(session)
+          } else this.#save(current)
         } catch { /* the next Lead request re-confines through ensure() */ }
       })
       this.#save(intent)

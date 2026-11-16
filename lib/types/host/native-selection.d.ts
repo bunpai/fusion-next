@@ -88,4 +88,11 @@ export declare function installNativeFusionSelection(ctx: Context, input: {
      * session-pair document's lead field (idempotent compare before write).
      */
     leadChanged?(sessionId: string, lead: PhysicalRoute): void;
+    /**
+     * Lazily create the coordinator for a session-pair activation when no
+     * configured profile or previously selected binding warmed the runtime yet
+     * (fresh installs pair per session before any global pair exists). Resolved
+     * with the session profile built from the current lead+worker routes.
+     */
+    ensureCoordinator?(sessionId: string, lead: PhysicalRoute, worker: PhysicalRoute): Promise<void>;
 }): () => void;
