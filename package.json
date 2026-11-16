@@ -1,11 +1,11 @@
 {
   "name": "fusion-next",
-  "version": "0.1.14",
+  "version": "0.1.15",
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"
   },
-  "description": "Fusion Next for DeepSeek Harness: per-session planner/executor pair — a frontier Lead that reads, briefs and reviews, and a cheaper Sidekick that writes the code. Renamed from the dsh-model-fusion fork to a separate plugin identity.",
+  "description": "Fusion Next for DeepSeek Harness: per-session planner/executor pair \u2014 a frontier Lead that reads, briefs and reviews, and a cheaper Sidekick that writes the code. Renamed from the dsh-model-fusion fork to a separate plugin identity.",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
