@@ -429,11 +429,15 @@ async function invokeCheck(input: CheckInput, check: FrozenCheck) {
       })()
       if (settled === undefined) {
         lastError = new Error(`check dispatch returned no result for "${candidate}"`)
-        break
+        continue
       }
       const contentText = JSON.stringify(settled?.content ?? '') + JSON.stringify(settled?.value ?? '')
-      if (settled?.isError && /unknown tool|not a function|cannot find/i.test(contentText)) {
-        lastError = new Error(`unknown tool "${candidate}"`)
+      // isError means a tool-level failure (unknown tool, invalid args,
+      // sandbox deny, approval). Nonzero exit codes arrive as ordinary
+      // foreground results, so ANY isError is safe to retry under the next
+      // candidate shell name.
+      if (settled?.isError) {
+        lastError = new Error(`tool "${candidate}" errored: ${contentText.slice(0, 500)}`)
         continue
       }
       shellTool = candidate
@@ -441,18 +445,15 @@ async function invokeCheck(input: CheckInput, check: FrozenCheck) {
       executed = true
       break
     } catch (error) {
+      // Any dispatch failure under one shell name (unknown tool, permission,
+      // provider interception) may still succeed under another — collect the
+      // error and try the next candidate; the fall-through after the loop
+      // records the last error as outcome-unknown.
       lastError = error
       if (!isUnknownTool(error)) {
         const show = (e: unknown, depth: number): string => e instanceof Error ? `${e.name}: ${e.message}\n${e.stack ?? ''}${depth < 5 && 'cause' in e && e.cause ? '\n--cause--> ' + show(e.cause, depth + 1) : ''}` : String(e)
         console.error('[fusion-check-error]', show(error, 0))
-        const evidence: ToolEvidence = { ...started, state: 'outcome-unknown', endedAt: new Date().toISOString(),
-          stderr: store.putArtifact(order.taskId, Buffer.from(String(error)), 'text/plain') }
-        store.writeDocument(key, 1, { check, evidence })
-        input.uncertain?.(evidence)
-        remove()
-        throw error
       }
-      // 'unknown tool' → try the next candidate shell name.
     }
   }
   remove()
