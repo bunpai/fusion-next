@@ -71,6 +71,23 @@ const OPS_READ_EXTRAS = new Set([
 export const isRead = (exec: Readonly<ToolExecution>) => READ_TOOLS.has(exec.name)
   || exec.name === 'str_replace_editor' && (exec.arguments as { command?: unknown }).command === 'view'
   || exec.name.startsWith('ops_') && (READ_TOOLS.has(exec.name.slice(4)) || OPS_READ_EXTRAS.has(exec.name))
+// Non-mutating Host tools a fused Lead may always call — they change no
+// workspace bytes, so gating them behind the read-only funnel just breaks the
+// Lead's own workflow (skill loading, teammate introspection, context folding).
+const LEAD_SAFE_TOOLS = new Set([
+  'skill', 'list_agents', 'send_message', 'wait_agent', 'interrupt_agent', 'ask_user_question',
+  'todo_write', 'schedule_create', 'schedule_edit', 'schedule_list', 'schedule_view',
+  'web_search', 'web_fetch', 'compress', 'decompress', 'search_context', 'acp_status', 'acp_cache',
+  'tgrep', 'tgrep_server', 'job_kill', 'list_subagent_models', 'read_image',
+  'cordis_inspect_list', 'cordis_inspect_query', 'load_workspace_dependencies', 'working_directory',
+  'get_goal', 'update_goal', 'create_goal', 'present',
+  'hindsight_list_pages', 'hindsight_read_page', 'hindsight_search_pages', 'hindsight_reflect',
+  'hindsight_sync_status', 'hindsight_diagnose', 'hindsight_capture_initiative', 'hindsight_ingest_document',
+  'plugin_manager', 'team_task_create', 'team_task_get', 'team_task_list', 'team_task_update',
+  'univer_status', 'univer_inspect', 'univer_api', 'univer_lint', 'univer_resources',
+])
+const isLeadSafe = (exec: Readonly<ToolExecution>) => isRead(exec) || LEAD_SAFE_TOOLS.has(exec.name)
+  || exec.name.startsWith('mnemon_') || exec.name.startsWith('hindsight_')
 // ops_bash 像原生 shell 一样经过 leadShellProblem：只读沙箱约束下允许 Lead 跑只读命令。
 export const isLeadShell = (name: string) => isShellTool(name) || name === 'ops_bash'
 const FUSION_NEXT_TOOLS = new Set(['fusion_next_read_state', 'fusion_next_delegate_text', 'fusion_next_explore', 'fusion_next_delegate', 'fusion_next_rework', 'fusion_next_wait', 'fusion_next_review_result', 'fusion_next_submit_result', 'fusion_next_takeover', 'fusion_next_finish_direct', 'fusion_next_read_evidence', 'fusion_next_list_evidence'])
@@ -984,7 +1001,7 @@ export class FusionCoordinator {
     // run_code is exempt here exactly as in #separatedLeadGuard below: under PTC it wraps every
     // dispatch and its inner calls re-enter this gate one by one — denying the wrapper would lock
     // the Lead out of even fusion_next_wait/fusion_next_read_state while the Sidekick owns the work.
-    if (enforcedWorkflow(binding) && role === 'lead' && !isRead(exec) && !FUSION_NEXT_TOOLS.has(exec.name)
+    if (enforcedWorkflow(binding) && role === 'lead' && !isLeadSafe(exec) && !FUSION_NEXT_TOOLS.has(exec.name)
       && exec.name !== 'run_code'
       && (!adaptiveWorkflow(binding) || state.currentWorkOrder)) {
       const check = (isShellTool(exec.name) || exec.name === 'ops_bash' || exec.name === 'ops_run')
@@ -992,7 +1009,7 @@ export class FusionCoordinator {
       const takeover = state.currentWorkOrder && this.#runtime(binding.taskId).takeover
       if (!check && !takeover) return this.workflow.denyEffect(binding)
     }
-    if (isRead(exec) || FUSION_NEXT_TOOLS.has(exec.name) || exec.name === 'run_code') return undefined
+    if (isLeadSafe(exec) || FUSION_NEXT_TOOLS.has(exec.name) || exec.name === 'run_code') return undefined
     if (binding.profile.interactionMode === 'model-like' && !enforcedWorkflow(binding) && role === 'lead') {
       const refused = this.#leadWriteBoundary(exec, binding)
       if (refused) return refused
@@ -1106,7 +1123,7 @@ export class FusionCoordinator {
     // run_code wraps every tool on hosts that publish the code-mode entry point; the nested calls it makes
     // re-enter this gate individually (nested shell still hits leadShellProblem), so denying the outer call
     // would dead-lock a sandboxed Lead that cannot even reach fusion_next_delegate.
-    if (isRead(exec) || FUSION_NEXT_TOOLS.has(exec.name) || exec.name === 'run_code') return false
+    if (isLeadSafe(exec) || FUSION_NEXT_TOOLS.has(exec.name) || exec.name === 'run_code') return false
     if ((isShellTool(exec.name) || exec.name === 'ops_bash' || exec.name === 'ops_run')
       && this.#nestedCheckMatch(exec)) return false
     if (isLeadShell(exec.name) && (exec.arguments as { run_in_background?: unknown }).run_in_background === true) {

@@ -52,8 +52,21 @@ function readEntry(snapshot: WorkspaceSnapshot, entry: WorkspaceEntry): Buffer {
 
 export function captureChangeBase(store: SqliteFusionStore, taskId: TaskId, base: WorkspaceSnapshot, allowed: readonly string[]): ChangeBase {
   const entries = base.entries.filter(entry => pathAllowed(entry.path, allowed))
-  const refs = store.putArtifacts(taskId, entries.map(entry => ({ bytes: readEntry(base, entry), mediaType: 'application/octet-stream' })))
-  return { schemaVersion: 1, snapshot: base.id, contents: Object.fromEntries(entries.map((entry, i) => [entry.path, refs[i]])) }
+  // Entries a delegate can legitimately cover but the frozen base cannot hold —
+  // oversized files (>16MB) or paths that changed kind mid-delegate — must not
+  // kill the whole dispatch. The snapshot diff at review still records them.
+  const readable: WorkspaceEntry[] = []
+  const bytes: Buffer[] = []
+  for (const entry of entries) {
+    try { bytes.push(readEntry(base, entry)); readable.push(entry) }
+    catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      if (/bounded regular source file|kind changed|ENOENT/.test(message)) continue
+      throw error
+    }
+  }
+  const refs = store.putArtifacts(taskId, bytes.map(b => ({ bytes: b, mediaType: 'application/octet-stream' })))
+  return { schemaVersion: 1, snapshot: base.id, contents: Object.fromEntries(readable.map((entry, i) => [entry.path, refs[i]])) }
 }
 
 function quotePath(path: string): string {

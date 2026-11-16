@@ -22,7 +22,7 @@ const styles = `
 .fusion-executor{display:flex;align-items:center;gap:6px;min-width:0}
 .fusion-executor .fusion-executor-mark{display:flex;align-items:center;gap:4px;color:var(--dsw-alias-label-secondary);flex:none}
 .fusion-executor .fusion-executor-label{display:var(--dsh-composer-model-text-display,inline);font-size:12px;white-space:nowrap}
-.fusion-executor select{appearance:none;-webkit-appearance:none;font:inherit;font-size:13px;height:28px;width:auto;min-width:0;padding:0 18px 0 4px;border-radius:8px;cursor:pointer;
+.fusion-executor select{appearance:none;-webkit-appearance:none;font:inherit;font-size:13px;height:28px;width:auto;min-width:0;max-width:150px;padding:0 18px 0 4px;border-radius:8px;cursor:pointer;
   border:0;background-color:transparent;color:var(--dsw-alias-label-primary);color-scheme:inherit;
   text-overflow:ellipsis;white-space:nowrap;overflow:hidden;
   background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 16 16'><path d='M4.5 6.5l3.5 3.5 3.5-3.5' fill='none' stroke='%23999' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/></svg>");
