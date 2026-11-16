@@ -62,8 +62,9 @@ export function FusionPairPicker({ sessionId, directory, load }: FusionPairPicke
         payload: { args: { agentId: sessionId, line, submittedAttachments: [] } } }),
     })
     if (!res.ok) return undefined
-    const body = await res.json().catch(() => undefined) as { result?: { value?: { text?: string } } } | undefined
-    return body?.result?.value?.text
+    const body = await res.json().catch(() => undefined) as
+      { result?: { value?: { result?: { text?: string }; text?: string } } } | undefined
+    return body?.result?.value?.result?.text ?? body?.result?.value?.text
   }
   const refreshViaCommand = async () => {
     const text = await cmdPair('/fusion-next pair')
