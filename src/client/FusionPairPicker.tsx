@@ -51,12 +51,32 @@ export function FusionPairPicker({ sessionId, directory, load }: FusionPairPicke
   const [view, setView] = useState<PairView | undefined>()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | undefined>()
+  // Remote pages cannot reach the plugin HTTP API (trustedRequest is
+  // loopback-only by design). The authenticated commands channel works
+  // everywhere, so reading and writing the pair falls back to
+  // `/fusion-next pair` there.
+  const cmdPair = async (line: string): Promise<string | undefined> => {
+    const res = await fetch('api/commands/execute', {
+      method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ type: 'client-request', rpcId: crypto.randomUUID(), method: 'commands/execute',
+        payload: { args: { agentId: sessionId, line, submittedAttachments: [] } } }),
+    })
+    if (!res.ok) return undefined
+    const body = await res.json().catch(() => undefined) as { result?: { value?: { text?: string } } } | undefined
+    return body?.result?.value?.text
+  }
+  const refreshViaCommand = async () => {
+    const text = await cmdPair('/fusion-next pair')
+    const found = text?.match(/执行模型[：:]\s*([^\s（(]+)|Executor:\s*([^\s(]+)/i)
+    const worker = found ? routeOf(found[1] ?? found[2] ?? '') ?? null : null
+    setView(text === undefined ? undefined : { worker, lead: null, selected: Boolean(worker) })
+  }
   const refresh = () => {
     void fetch(`/api/fusion-next?view=session-pair&sessionId=${encodeURIComponent(sessionId)}`,
       { credentials: 'same-origin', cache: 'no-store' })
       .then(async response => response.ok ? response.json() as Promise<PairView> : undefined)
-      .then(data => setView(data))
-      .catch(() => setView(undefined))
+      .then(async data => data === undefined ? void refreshViaCommand() : setView(data))
+      .catch(() => void refreshViaCommand())
   }
   useEffect(() => { load(); refresh() }, [load, sessionId])
   const choose = (value: string) => {
@@ -66,13 +86,17 @@ export function FusionPairPicker({ sessionId, directory, load }: FusionPairPicke
       method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ action: 'session-pair', sessionId, worker: value ? routeOf(value) ?? null : null }),
     }).then(async response => {
-      if (!response.ok) {
-        const body = await response.json().catch(() => ({})) as { error?: string }
-        if (response.status === 401 || response.status === 403)
+      if (response.ok) { refresh(); return }
+      const body = await response.json().catch(() => ({})) as { error?: string }
+      if (response.status === 401 || response.status === 403) {
+        // Remote page: pair through the authenticated commands channel.
+        const text = await cmdPair(`/fusion-next pair ${value || 'off'}`)
+        if (text === undefined)
           throw new Error(tr(lang, `远程模式：请发送 /fusion-next pair ${value || 'off'}`, `Remote mode: send /fusion-next pair ${value || 'off'}`))
-        throw new Error(body.error ?? `HTTP ${response.status}`)
+        void refreshViaCommand()
+        return
       }
-      refresh()
+      throw new Error(body.error ?? `HTTP ${response.status}`)
     }).catch(cause => setError(cause instanceof Error ? cause.message : String(cause)))
       .finally(() => setBusy(false))
   }
