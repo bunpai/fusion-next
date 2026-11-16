@@ -373,11 +373,18 @@ async function invokeCheck(input: CheckInput, check: FrozenCheck) {
   // callIds and wrap the check command accordingly; the program returns the
   // shell tool's raw result object, so the same parsing below applies.
   const ptcDispatch = String(exec.callId ?? '').includes(':ptc:') || String(exec.rootCallId ?? '').includes(':ptc:')
-  const program = `return await tools.${nativeShellTool}(${JSON.stringify(checkArgs)})`
+  // Tool-replacement plugins (dsh-ops and friends) can hide the native shell
+  // entirely and expose `ops_bash` instead, so resolve the shell name against
+  // the caller's visible schema table and fall back to the platform default
+  // when the surface cannot be enumerated.
+  const visible = new Set<string>()
+  try { for (const schema of (ctx.tools.schemas?.(exec.agent as never) ?? [])) if (schema && typeof schema === 'object' && 'name' in schema && typeof schema.name === 'string') visible.add(schema.name) } catch { /* schemas optional on older hosts */ }
+  const shellTool = visible.size === 0 ? nativeShellTool : (['bash', 'pwsh', 'ops_bash', 'ops_run'].find(name => visible.has(name)) ?? nativeShellTool)
+  const program = `return await tools.${shellTool}(${JSON.stringify(checkArgs)})`
   const runCodeArgs = { code: program, description: checkArgs.description ?? 'fusion acceptance check' }
   const call = ptcDispatch
     ? { id: callId, name: 'run_code', arguments: JSON.stringify(runCodeArgs) }
-    : { id: callId, name: nativeShellTool, arguments: JSON.stringify(checkArgs) }
+    : { id: callId, name: shellTool, arguments: JSON.stringify(checkArgs) }
   let result: { additionalContexts?: unknown[]; value?: unknown; isError?: boolean; content?: unknown }
   try {
     // SDK compat: newer Hosts expose ctx.tools.execute as a BATCH entry
