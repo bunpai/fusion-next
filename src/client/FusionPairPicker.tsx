@@ -1,5 +1,5 @@
 import { tr, useLang } from './i18n.js'
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { ModelDirectoryState } from '@deepseek-ai/dsh-client-ui-model-selection/client'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { PhysicalRoute } from '../contracts.js'
@@ -68,13 +68,21 @@ export function FusionPairPicker({ sessionId, directory, load }: FusionPairPicke
     }).then(async response => {
       if (!response.ok) {
         const body = await response.json().catch(() => ({})) as { error?: string }
+        if (response.status === 401 || response.status === 403)
+          throw new Error(tr(lang, `远程模式：请发送 /fusion-next pair ${value || 'off'}`, `Remote mode: send /fusion-next pair ${value || 'off'}`))
         throw new Error(body.error ?? `HTTP ${response.status}`)
       }
       refresh()
     }).catch(cause => setError(cause instanceof Error ? cause.message : String(cause)))
       .finally(() => setBusy(false))
   }
-  const groups = view?.catalog?.groups ?? []
+  // The Host model directory is the same catalog the native selector renders
+  // from — it works on remote pages too, unlike the plugin's local-only HTTP
+  // API (trustedRequest). Prefer it; keep the API catalog as fallback.
+  const dirState = useSyncExternalStore(directory.subscribe, directory.getSnapshot)
+  const groups: CatalogGroup[] = dirState.groups.length
+    ? dirState.groups.map(group => ({ id: group.id, name: group.name, models: group.models.map(model => ({ id: model.id, name: model.name })) }))
+    : view?.catalog?.groups ?? []
   const current = view?.worker ? keyOf(view.worker) : ''
   const offLabel = tr(lang, '关闭', 'Off')
   let selectedLabel = offLabel
