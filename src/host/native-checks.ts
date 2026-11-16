@@ -378,37 +378,80 @@ async function invokeCheck(input: CheckInput, check: FrozenCheck) {
   // the caller's visible schema table and fall back to the platform default
   // when the surface cannot be enumerated.
   const visible = new Set<string>()
-  try { for (const schema of (ctx.tools.schemas?.(exec.agent as never) ?? [])) if (schema && typeof schema === 'object' && 'name' in schema && typeof schema.name === 'string') visible.add(schema.name) } catch { /* schemas optional on older hosts */ }
-  const shellTool = visible.size === 0 ? nativeShellTool : (['bash', 'pwsh', 'ops_bash', 'ops_run'].find(name => visible.has(name)) ?? nativeShellTool)
-  const program = `return await tools.${shellTool}(${JSON.stringify(checkArgs)})`
-  const runCodeArgs = { code: program, description: checkArgs.description ?? 'fusion acceptance check' }
-  const call = ptcDispatch
-    ? { id: callId, name: 'run_code', arguments: JSON.stringify(runCodeArgs) }
-    : { id: callId, name: shellTool, arguments: JSON.stringify(checkArgs) }
-  let result: { additionalContexts?: unknown[]; value?: unknown; isError?: boolean; content?: unknown }
   try {
-    // SDK compat: newer Hosts expose ctx.tools.execute as a BATCH entry
-    // ({calls:[{id,name,arguments}]}); older SDKs accepted a single call
-    // ({callId,name,arguments}). Passing both lets either runtime find the
-    // fields it reads.
-    const raw = await ctx.tools.execute({ callId, rootCallId: exec.rootCallId, parent: exec.token,
-      calls: [call], name: call.name, arguments: call.name === 'run_code' ? runCodeArgs : checkArgs,
-      agent: exec.agent, signal: exec.signal } as Parameters<typeof ctx.tools.execute>[0])
-    // Batch runtimes settle per-call results under .results[]; single-call
-    // runtimes return the result object itself.
-    const settled = (raw && typeof raw === 'object' && 'results' in raw && Array.isArray((raw as { results?: unknown }).results)
-      ? (raw as { results: { callId: string; result: unknown }[] }).results.find((entry) => entry.callId === callId)?.result
-      : raw) as typeof result
-    result = settled
-  } catch (error) {
+    // SDK evolution: `tools.schemas` never shipped; `tools.list(agent)` is the
+    // catalog. Try schemas first for forward-compat, fall back to list.
+    const named = (item: unknown) => { if (item && typeof item === 'object' && 'name' in item && typeof (item as { name: unknown }).name === 'string') visible.add((item as { name: string }).name) }
+    for (const schema of ((ctx.tools as { schemas?: (a: unknown) => unknown }).schemas?.(exec.agent) as unknown[] | undefined) ?? []) named(schema)
+    if (visible.size === 0) for (const tool of (((ctx.tools as { list?: (a: unknown) => unknown }).list?.(exec.agent) as unknown[] | undefined) ?? [])) named(tool)
+  } catch { /* enumeration optional on older hosts */ }
+  const shellCandidates = (() => {
+    const all = ['bash', 'pwsh', 'ops_bash', 'ops_run']
+    const hits = visible.size === 0 ? all : all.filter(name => visible.has(name))
+    const list = hits.length ? hits : [nativeShellTool]
+    return [...new Set([...list, nativeShellTool])]
+  })()
+  let shellTool = shellCandidates[0]
+  const isUnknownTool = (e: unknown) => {
+    const text = e instanceof Error ? `${e.name}: ${e.message}` : String(e)
+    return /unknown tool/i.test(text) || /not a function|cannot find/i.test(text)
+  }
+  let result: { additionalContexts?: unknown[]; value?: unknown; isError?: boolean; content?: unknown } | undefined
+  let lastError: unknown
+  let executed = false
+  for (const candidate of shellCandidates) {
+    const program = `return await tools.${candidate}(${JSON.stringify(checkArgs)})`
+    const runCodeArgs = { code: program, description: checkArgs.description ?? 'fusion acceptance check' }
+    const call = ptcDispatch
+      ? { id: callId, name: 'run_code', arguments: JSON.stringify(runCodeArgs) }
+      : { id: callId, name: candidate, arguments: JSON.stringify(checkArgs) }
+    try {
+      // SDK compat: newer Hosts expose ctx.tools.execute as a BATCH entry
+      // ({calls:[{id,name,arguments}]}); older SDKs accepted a single call
+      // ({callId,name,arguments}). Passing both lets either runtime find the
+      // fields it reads.
+      const raw = await ctx.tools.execute({ callId, rootCallId: exec.rootCallId, parent: exec.token,
+        calls: [call], name: call.name, arguments: call.name === 'run_code' ? runCodeArgs : checkArgs,
+        agent: exec.agent, signal: exec.signal } as Parameters<typeof ctx.tools.execute>[0])
+      // Batch runtimes settle per-call results under .results[]; single-call
+      // runtimes return the result object itself.
+      const settled = (raw && typeof raw === 'object' && 'results' in raw && Array.isArray((raw as { results?: unknown }).results)
+        ? (raw as { results: { callId: string; result: unknown }[] }).results.find((entry) => entry.callId === callId)?.result
+        : raw) as typeof result
+      const contentText = JSON.stringify(settled?.content ?? '') + JSON.stringify(settled?.value ?? '')
+      if (settled?.isError && /unknown tool|not a function|cannot find/i.test(contentText)) {
+        lastError = new Error(`unknown tool "${candidate}"`)
+        continue
+      }
+      shellTool = candidate
+      result = settled
+      executed = true
+      break
+    } catch (error) {
+      lastError = error
+      if (!isUnknownTool(error)) {
+        const show = (e: unknown, depth: number): string => e instanceof Error ? `${e.name}: ${e.message}\n${e.stack ?? ''}${depth < 5 && 'cause' in e && e.cause ? '\n--cause--> ' + show(e.cause, depth + 1) : ''}` : String(e)
+        console.error('[fusion-check-error]', show(error, 0))
+        const evidence: ToolEvidence = { ...started, state: 'outcome-unknown', endedAt: new Date().toISOString(),
+          stderr: store.putArtifact(order.taskId, Buffer.from(String(error)), 'text/plain') }
+        store.writeDocument(key, 1, { check, evidence })
+        input.uncertain?.(evidence)
+        remove()
+        throw error
+      }
+      // 'unknown tool' → try the next candidate shell name.
+    }
+  }
+  remove()
+  if (!executed || result === undefined) {
     const show = (e: unknown, depth: number): string => e instanceof Error ? `${e.name}: ${e.message}\n${e.stack ?? ''}${depth < 5 && 'cause' in e && e.cause ? '\n--cause--> ' + show(e.cause, depth + 1) : ''}` : String(e)
-    console.error('[fusion-check-error]', show(error, 0))
+    console.error('[fusion-check-error]', show(lastError, 0))
     const evidence: ToolEvidence = { ...started, state: 'outcome-unknown', endedAt: new Date().toISOString(),
-      stderr: store.putArtifact(order.taskId, Buffer.from(String(error)), 'text/plain') }
+      stderr: store.putArtifact(order.taskId, Buffer.from(String(lastError)), 'text/plain') }
     store.writeDocument(key, 1, { check, evidence })
     input.uncertain?.(evidence)
-    throw error
-  } finally { remove() }
+    throw lastError
+  }
   for (const context of result.additionalContexts ?? []) exec.deferContext(context as Parameters<typeof exec.deferContext>[0])
   // Under PTC, result.value is the run_code program's return value — the
   // `tools.<shell>(...)` call's result. Depending on the runtime that may be
