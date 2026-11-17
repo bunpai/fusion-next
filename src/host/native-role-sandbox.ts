@@ -160,7 +160,7 @@ export class NativeRoleSandbox {
    * rides the same plugin notice channel as Worker notices; it is appended
    * after the re-confine lands so ordering reads cause → effect.
    */
-  #notice(session: Session) {
+  #notice(session: Session, userPick = false) {
     try {
       // Cross-instance dedupe: a second runtime listener reads this surface too,
       // so skip when a mode-revert notice is already on the recent surface.
@@ -171,12 +171,15 @@ export class NativeRoleSandbox {
         const block = event.data.content?.find?.((b: { type?: string }) => b.type === 'text') as { text?: string } | undefined
         const text = block?.text ?? ''
         if (source?.kind === 'plugin:fusion-next' && source?.form === 'notice'
-          && (text.startsWith('Fusion Next：访问模式') || text.startsWith('Fusion Next reverted'))) return
+          && (text.startsWith('Fusion Next：') || text.startsWith('Fusion Next '))) return
         break
       }
+      const text = userPick
+        ? 'Fusion Next：你选择的模式已应用到执行模型；配对期间 Lead 保持只读。若要更改 Lead 的模式，请先将执行模型设为关闭。 / Fusion Next applied your chosen mode to the executor; the Lead stays read-only while paired. To change the Lead’s mode, set the executor to Off first.'
+        : 'Fusion Next：访问模式已设为只读，因为执行模型已开启（Lead 只读，执行模型写）。若要更改访问模式，请先将执行模型设为关闭。 / Fusion Next set the access mode to read-only because an executor is selected (Lead reads, executor writes). To change it, set the executor to Off first.'
       session.append('user/message', createUserMessage({
-        content: [{ type: 'text', text: 'Fusion Next：访问模式已恢复为只读，因为执行模型仍开启。若要更改访问模式，请先将执行模型设为关闭。 / Fusion Next reverted the access mode to read-only because an executor is still selected. Set the executor to Off to change it.' }],
-        source: { kind: 'plugin:fusion-next', form: 'notice', summary: 'Fusion Next reverted the Lead access mode to read-only' },
+        content: [{ type: 'text', text }],
+        source: { kind: 'plugin:fusion-next', form: 'notice', summary: 'Fusion Next set the Lead access mode to read-only' },
       }), { surfaceOp: 'append' })
     } catch { /* notice is best-effort */ }
   }
@@ -211,7 +214,7 @@ export class NativeRoleSandbox {
             (current.noticed ??= []).push(event.seq)
             if (current.noticed.length > 12) current.noticed.splice(0, current.noticed.length - 12)
             this.#save(current)
-            this.#notice(session)
+            this.#notice(session, true)
           } else this.#save(current)
         } catch { /* the next Lead request re-confines through ensure() */ }
       })
