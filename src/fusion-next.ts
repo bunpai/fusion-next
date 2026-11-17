@@ -271,7 +271,20 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     model: route.model,
     ...(route.reasoningEffort === undefined ? {} : { reasoningEffort: ReasoningEffortId(route.reasoningEffort) }),
   })
-  ctx.effect(() => ctx.llm.registerAdapter([FUSION_NEXT_PROVIDER], new FusionCatalogAdapter(leadModelInfo, fusionDispatch, () => defaultProfile?.profile.lead)))
+  // resolveLead: the configured global default, then the settings document,
+  // then any selected session binding — a fresh install pairs per session
+  // before a default profile exists, and the virtual selection still streams.
+  const resolveFusionLead = (): PhysicalRoute | undefined => {
+    if (defaultProfile?.profile.lead) return defaultProfile.profile.lead
+    try {
+      const saved = store.readDocument('settings:profile')?.value
+      const lead = savedLeadRoute(saved)
+      if (lead) return lead
+      for (const binding of bindings.selected()) if (binding.profile.lead?.model) return binding.profile.lead
+    } catch { /* a read failure leaves the soft-finish path in charge */ }
+    return undefined
+  }
+  ctx.effect(() => ctx.llm.registerAdapter([FUSION_NEXT_PROVIDER], new FusionCatalogAdapter(leadModelInfo, fusionDispatch, resolveFusionLead)))
   ctx.effect(() => installNativeFusionSelection(ctx, {
     coordinator: () => runtime, profile: () => defaultProfile,
     // C01 activation seam: once a session commits to Fusion, the journal-backed
