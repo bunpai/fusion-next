@@ -15,6 +15,7 @@ interface PairView {
   worker: PhysicalRoute | null
   lead: PhysicalRoute | null
   selected: boolean
+  executorMode?: string | null
   catalog?: { groups: CatalogGroup[] }
 }
 
@@ -33,9 +34,16 @@ const styles = `
 .fusion-executor select:disabled{cursor:default;opacity:.6}
 .fusion-executor select:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}
 .fusion-executor [role=status]{font-size:12px;color:var(--dsw-alias-state-error-primary);white-space:nowrap}
+.fusion-executor .fusion-executor-mode{display:var(--dsh-composer-model-text-display,inline);font-size:11px;padding:1px 7px;border-radius:999px;white-space:nowrap;
+  border:1px solid var(--dsw-alias-border-primary);color:var(--dsw-alias-label-secondary);flex:none}
 `
 
 const keyOf = (route: PhysicalRoute) => `${route.provider}/${route.model}`
+const MODE_LABEL: Record<string, string> = {
+  'read-only': '只读',
+  'workspace-write': '工作区修改',
+  'danger-full-access': '完全权限',
+}
 const routeOf = (key: string): PhysicalRoute | undefined => {
   const cut = key.indexOf('/')
   return cut > 0 ? { provider: key.slice(0, cut), model: key.slice(cut + 1) } : undefined
@@ -70,7 +78,9 @@ export function FusionPairPicker({ sessionId, directory, load }: FusionPairPicke
     const text = await cmdPair('/fusion-next pair')
     const found = text?.match(/执行模型[：:]\s*([^\s（(]+)|Executor:\s*([^\s(]+)/i)
     const worker = found ? routeOf(found[1] ?? found[2] ?? '') ?? null : null
-    setView(text === undefined ? undefined : { worker, lead: null, selected: Boolean(worker) })
+    const modeFound = text?.match(/执行权限[：:]?\s*([a-z-]+)|executor mode\s+([a-z-]+)/i)
+    setView(text === undefined ? undefined : { worker, lead: null, selected: Boolean(worker),
+      executorMode: modeFound?.[1] ?? modeFound?.[2] ?? null })
   }
   const refresh = () => {
     void fetch(`/api/fusion-next?view=session-pair&sessionId=${encodeURIComponent(sessionId)}`,
@@ -146,6 +156,9 @@ export function FusionPairPicker({ sessionId, directory, load }: FusionPairPicke
       </optgroup>)}
     </select>
     <span ref={sizerRef} className="fusion-executor-sizer" aria-hidden="true">{selectedLabel}</span>
+    {current && view?.executorMode && <span className="fusion-executor-mode"
+      title={tr(lang, `执行模型权限：${view.executorMode}`, `Executor mode: ${view.executorMode}`)}>
+      {MODE_LABEL[view.executorMode] ?? view.executorMode}</span>}
     {error && <span role="status" title={error}>⚠</span>}
   </div>
 }

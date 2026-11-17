@@ -328,8 +328,12 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
           const sid = url.searchParams.get('sessionId') ?? ''
           const pair = sid ? readSessionPair(store, sid)?.pair : undefined
           const bound = sid ? bindings.read(sid)?.binding : undefined
+          // The executor runs under the user's chosen mode (the sandbox-intent
+          // records it; a user mode pick while paired is pushed to the Sidekick).
+          const intent = sid ? store.readDocument(`sandbox-intent:${sid}`)?.value as { mode?: string } | undefined : undefined
           return json(res, 200, { worker: pair?.worker ?? null, lead: pair?.lead ?? null,
-            selected: Boolean(bound?.selected), catalog: await physicalCatalog() })
+            selected: Boolean(bound?.selected), executorMode: intent?.mode ?? null,
+            catalog: await physicalCatalog() })
         }
         if (url.searchParams.get('view') === 'session-usage') {
           // Per-session token totals for the composer badge: summed over every
@@ -521,9 +525,11 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
           const target = note[0]
           if (!target) {
             const pair = prior?.pair
-            return { kind: 'success', text: pair?.worker
-              ? bi(`本会话执行模型：${pair.worker.provider}/${pair.worker.model}（规划 ${pair.lead?.provider}/${pair.lead?.model}）。`, `Executor: ${pair.worker.provider}/${pair.worker.model} (planner ${pair.lead?.provider}/${pair.lead?.model}).`)
-              : bi('本会话未设定执行模型。用 /fusion-next pair [<provider>/]<model> 设定，pair off 退出。', 'No executor set. Use /fusion-next pair [<provider>/]<model> to set one, pair off to exit.') }
+            if (!pair?.worker)
+              return { kind: 'success', text: bi('本会话未设定执行模型。用 /fusion-next pair [<provider>/]<model> 设定，pair off 退出。', 'No executor set. Use /fusion-next pair [<provider>/]<model> to set one, pair off to exit.') }
+            const intentMode = (store.readDocument(`sandbox-intent:${sessionId}`)?.value as { mode?: string } | undefined)?.mode
+            const modeText = intentMode ? bi(`，执行权限 ${intentMode}`, `, executor mode ${intentMode}`) : ''
+            return { kind: 'success', text: bi(`本会话执行模型：${pair.worker.provider}/${pair.worker.model}（规划 ${pair.lead?.provider}/${pair.lead?.model}）${modeText}。`, `Executor: ${pair.worker.provider}/${pair.worker.model} (planner ${pair.lead?.provider}/${pair.lead?.model})${modeText}.`) }
           }
           if (target === 'off' || target === 'none') {
             writeSessionPair(store, sessionId, prior?.revision ?? 0,
