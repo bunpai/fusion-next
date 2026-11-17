@@ -87,7 +87,13 @@ export class NativeRoleSandbox {
       const intent: Intent = saved?.active ? saved
         : { schemaVersion: 1, sessionId: binding.sessionId, mode: policy.resolve({ session: agent.session }).mode, ownSeqs: saved?.ownSeqs ?? [], active: true }
       const target = writer ? intent.mode : 'read-only'
-      if (policy.overrideOf(agent.session) !== target) this.#set(agent.session, target, intent)
+      if (policy.overrideOf(agent.session) !== target) {
+        this.#set(agent.session, target, intent)
+        // The confinement also flips a user-chosen mode at conversation start —
+        // give it the same visible notice as a user-initiated revert (deduped by the surface scan).
+        if (target === 'read-only' && intent.mode !== 'read-only')
+          setImmediate(() => { try { this.#notice(agent.session) } catch {} })
+      }
       this.#save(intent)
       return
     }
