@@ -5,7 +5,7 @@ import { isAbsolute, join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import type { GenerateOptions, ModelModality, StreamChunk } from '@deepseek-ai/dsh-llm'
+import type { GenerateOptions, LlmResolvedModelInfo, ModelModality, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-api-session-controller'
 import type {} from '@deepseek-ai/dsh-host-webserver'
@@ -244,17 +244,19 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     return creating
   }
   // The catalog entry admits what the configured Lead admits: the Lead is the
-  // only role that reads user content, while the Worker receives text work orders.
-  const leadInputModalities = async (): Promise<readonly ModelModality[] | undefined> => {
+  // only role that reads user content, while the Worker receives text work
+  // orders. The virtual entry also mirrors the Lead's declared contextWindow /
+  // output cap / reasoning so host compaction can size the context.
+  const leadModelInfo = async (): Promise<LlmResolvedModelInfo | undefined> => {
     try {
       const saved = store.readDocument('settings:profile')?.value
       const lead = savedLeadRoute(saved)
         ?? (config.profilePath && isAbsolute(config.profilePath) ? savedLeadRoute(loadJsonObject(config.profilePath)) : undefined)
       if (!lead) return undefined
-      return (await ctx.llm.resolveModelInfo(lead.provider, lead.model)).inputModalities
+      return await ctx.llm.resolveModelInfo(lead.provider, lead.model)
     } catch {
       // An unresolvable Lead route (unregistered provider, retired model, broken
-      // profile file) cannot verify image support; the catalog entry stays text-only.
+      // profile file) leaves the catalog entry text-only with no disclosed window.
       return undefined
     }
   }
@@ -269,7 +271,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     model: route.model,
     ...(route.reasoningEffort === undefined ? {} : { reasoningEffort: ReasoningEffortId(route.reasoningEffort) }),
   })
-  ctx.effect(() => ctx.llm.registerAdapter([FUSION_NEXT_PROVIDER], new FusionCatalogAdapter(leadInputModalities, fusionDispatch, () => defaultProfile?.profile.lead)))
+  ctx.effect(() => ctx.llm.registerAdapter([FUSION_NEXT_PROVIDER], new FusionCatalogAdapter(leadModelInfo, fusionDispatch, () => defaultProfile?.profile.lead)))
   ctx.effect(() => installNativeFusionSelection(ctx, {
     coordinator: () => runtime, profile: () => defaultProfile,
     // C01 activation seam: once a session commits to Fusion, the journal-backed

@@ -18,6 +18,7 @@ export type LeadInputModalities = () => Promise<readonly ModelModality[] | undef
 
 /** Streams one request through the route's physical adapter via the LLM runtime. */
 export type FusionDispatch = (options: GenerateOptions, route: PhysicalRoute) => AsyncIterable<StreamChunk>
+export type LeadModelInfo = () => Promise<LlmResolvedModelInfo | undefined>
 
 /**
  * Virtual local provider: the session and agent model state stay on
@@ -27,7 +28,7 @@ export type FusionDispatch = (options: GenerateOptions, route: PhysicalRoute) =>
  */
 export class FusionCatalogAdapter extends LlmAdapter {
   constructor(
-    private readonly leadInputModalities?: LeadInputModalities,
+    private readonly leadModelInfo?: LeadModelInfo,
     private readonly dispatch?: FusionDispatch,
     private readonly resolveLead?: () => PhysicalRoute | undefined,
   ) { super() }
@@ -41,12 +42,22 @@ export class FusionCatalogAdapter extends LlmAdapter {
   }
   override async resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
     if (provider !== FUSION_NEXT_PROVIDER || model !== FUSION_NEXT_MODEL) throw new Error('Unknown local Fusion selection')
-    // The Lead is the only role that reads user content, so the entry admits
-    // exactly what the configured Lead admits; text-only until it resolves.
-    const lead = (await this.leadInputModalities?.()) ?? []
+    // The virtual entry mirrors the configured Lead's declared capacity so the
+    // host's compaction and switch checks can size the context (rc.3 rejects a
+    // model with no contextWindow at model-switch time). Fall back to text-only
+    // when the Lead route cannot resolve yet.
+    const lead = await this.leadModelInfo?.().catch(() => undefined)
+    const leadModalities = lead?.inputModalities ?? []
+    // When no Lead is resolvable yet (fresh install, profile not saved) still
+    // declare a conservative window — an entry with NO context fails the host's
+    // model-switch compaction check outright (rc.3: MODEL_SWITCH_COMPACTION_FAILED).
+    const context = lead?.context ?? { contextWindow: 128_000 }
     return { provider, id: model, name: 'Fusion Next · 自动',
       description: 'Lead 与 Worker 协作。在设置 → Fusion 中配置模型。',
-      inputModalities: [...new Set<ModelModality>(['text', ...lead])] }
+      inputModalities: [...new Set<ModelModality>(['text', ...leadModalities])],
+      context,
+      ...(lead?.defaultMaxTokens === undefined ? {} : { defaultMaxTokens: lead.defaultMaxTokens }),
+      ...(lead?.reasoning === undefined ? {} : { reasoning: lead.reasoning }) }
   }
   override async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
     const route = this.resolveLead?.()

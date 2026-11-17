@@ -11,16 +11,26 @@ describe('FusionCatalogAdapter input modalities', () => {
   })
 
   it('admits exactly what the configured Lead admits, unioned with text', async () => {
-    const imageLead = new FusionCatalogAdapter(async () => ['image', 'text'])
+    const imageLead = new FusionCatalogAdapter(async () => ({ provider: 'p', id: 'm', name: 'm', inputModalities: ['image', 'text'] }))
     const imageResolved = await imageLead.resolveModel(FUSION_NEXT_PROVIDER, FUSION_NEXT_MODEL)
     expect(imageResolved).toMatchObject({ inputModalities: ['text', 'image'] })
-    const textLead = new FusionCatalogAdapter(async () => ['text'])
+    const textLead = new FusionCatalogAdapter(async () => ({ provider: 'p', id: 'm', name: 'm', inputModalities: ['text'] }))
     const textResolved = await textLead.resolveModel(FUSION_NEXT_PROVIDER, FUSION_NEXT_MODEL)
     expect(textResolved).toMatchObject({ inputModalities: ['text'] })
   })
 
+  it('mirrors the Lead context window so host compaction can size the virtual model', async () => {
+    const adapter = new FusionCatalogAdapter(async () => ({ provider: 'p', id: 'm', name: 'm',
+      inputModalities: ['text'], context: { contextWindow: 400_000 } as never, defaultMaxTokens: 128_000 }))
+    const resolved = await adapter.resolveModel(FUSION_NEXT_PROVIDER, FUSION_NEXT_MODEL)
+    expect(resolved.context?.contextWindow).toBe(400_000)
+    expect(resolved.defaultMaxTokens).toBe(128_000)
+    const bare = await new FusionCatalogAdapter().resolveModel(FUSION_NEXT_PROVIDER, FUSION_NEXT_MODEL)
+    expect(bare.context?.contextWindow).toBe(128_000) // conservative fallback keeps model switch alive
+  })
+
   it('resolves the exact Fusion selection through the same declaration', async () => {
-    const adapter = new FusionCatalogAdapter(async () => ['image'])
+    const adapter = new FusionCatalogAdapter(async () => ({ provider: 'p', id: 'm', name: 'm', inputModalities: ['image'] }))
     const resolved = await adapter.resolveModel(FUSION_NEXT_PROVIDER, FUSION_NEXT_MODEL)
     expect(resolved).toMatchObject({ provider: FUSION_NEXT_PROVIDER, id: FUSION_NEXT_MODEL, inputModalities: ['text', 'image'] })
     await expect(adapter.resolveModel(FUSION_NEXT_PROVIDER, 'other')).rejects.toThrow('Unknown local Fusion selection')
