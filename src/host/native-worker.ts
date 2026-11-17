@@ -144,14 +144,19 @@ export class NativeWorkerTransport {
   settle(parent: Agent, childId: string, signal: AbortSignal, yieldToSteering: true): Promise<Agent | undefined>
   async settle(parent: Agent, childId: string, signal: AbortSignal, yieldToSteering = false): Promise<Agent | undefined> {
     const child = this.#requireChild(parent, childId)
-    let interruptError: unknown
     let removeSteering = () => {}
-    const interrupt = () => {
-      try { this.ctx.subagents.interrupt(child.id, { kind: 'ancestor', agent: parent }) }
-      catch (error) { interruptError = error }
-    }
-    signal.addEventListener('abort', interrupt, { once: true })
-    if (signal.aborted) interrupt()
+    // The caller's signal bounds OUR wait, never the Worker's life: a PTC inner-call
+    // deadline (~75s) or a cancelled Lead tool aborting this signal must not kill a
+    // slow-but-alive Worker turn (the handoff is durable; the next wait continues it).
+    let onAbort!: () => void
+    const aborted = new Promise<never>((_, reject) => {
+      onAbort = () => reject(Object.assign(
+        new Error('FUSION_NEXT_INTERRUPTED: the waiting call was cancelled; the Worker handoff is still running — wait again to collect its result.'),
+        { name: 'AbortError' }))
+      if (signal.aborted) onAbort()
+      else signal.addEventListener('abort', onAbort, { once: true })
+    })
+    aborted.catch(() => {}) // attach early so an abort before racing is not unhandled
     try {
       if (yieldToSteering && !signal.aborted) {
         const steering = new Promise<true>(resolve => {
@@ -162,17 +167,16 @@ export class NativeWorkerTransport {
           removeSteering = parent.ctx.on('agent/inbox/inserted', ({ agent }) => { if (agent === parent) check() })
           check() // A message may already have arrived during delegation setup.
         })
-        const yielded = await Promise.race([child.whenIdle().then(() => false), steering])
+        const yielded = await Promise.race([child.whenIdle().then(() => false), steering, aborted])
         // Cancellation still owns full settlement; an already idle Worker can
         // be flushed normally. The Lead alone authors any revised Worker brief.
         if (yielded && !signal.aborted && child.status !== 'idle') return undefined
       }
-      await child.whenIdle()
-      if (interruptError) throw interruptError
+      await Promise.race([child.whenIdle(), aborted])
       if (this.ctx.agents.get(child.id) !== child) throw new Error('Worker residency changed; quiescence requires reconciliation')
       await this.#flushSettled(child)
       return child
-    } finally { removeSteering(); signal.removeEventListener('abort', interrupt) }
+    } finally { removeSteering(); signal.removeEventListener('abort', onAbort) }
   }
 
   async stop(parent: Agent, childId: string): Promise<Agent> {
