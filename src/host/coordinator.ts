@@ -460,7 +460,8 @@ export class FusionCoordinator {
       onPhysicalRouteSelected: (agentId, route) => this.options.onPhysicalRouteSelected?.(agentId, route),
       beforeRequest: (agent, turn, step, binding, role) => {
         this.options.authorizeRequest(agent, binding, role, turn, step)
-        this.roleSandbox.ensure(agent, binding, role, role === 'lead' && (this.#leadWriter(binding, agent) || this.options.leadSandbox === false))
+        this.roleSandbox.ensure(agent, binding, role, role === 'lead' && (this.#leadWriter(binding, agent)
+          || this.options.leadSandbox === false || binding.profile.leadConfinement === 'user-mode'))
         const state = this.state(binding.taskId)
         if (role === 'lead' && state.activeReviewTicket) captureNativeReviewRequest(store, agent, turn, step, state.activeReviewTicket)
         if (role === 'worker') {
@@ -490,8 +491,9 @@ export class FusionCoordinator {
           return hasStartActivation(this.ctx.subagents) ? [...this.options.workerTools] : undefined
         }
         const lease = this.#held.get(binding.taskId)
-        // leadSandbox=false (operator opt-out): the Lead is a normal model — full toolset, no separation.
-        if (roleSeparated(binding) && this.options.leadSandbox === false) return undefined
+        // leadSandbox=false (operator opt-out) or profile leadConfinement='user-mode':
+        // the Lead is a normal model — full toolset, no separation.
+        if (roleSeparated(binding) && (this.options.leadSandbox === false || binding.profile.leadConfinement === 'user-mode')) return undefined
         if (roleSeparated(binding)) return this.#leadWriter(binding, agent) ? undefined : this.#separatedLeadTools(agent, state, binding)
         if (enforcedWorkflow(binding)) {
           if (adaptiveWorkflow(binding) && !state.currentWorkOrder) return undefined
@@ -1039,14 +1041,16 @@ export class FusionCoordinator {
       const restore = this.onDemand.blocked(exec.agent, binding)
       if (restore) return restore
     }
-    if (roleSeparated(binding) && role === 'lead' && this.options.leadSandbox !== false) {
+    if (roleSeparated(binding) && role === 'lead' && this.options.leadSandbox !== false
+      && binding.profile.leadConfinement !== 'user-mode') {
       const separated = this.#separatedLeadGuard(exec, binding)
       if (separated !== false) return separated
     }
     // run_code is exempt here exactly as in #separatedLeadGuard below: under PTC it wraps every
     // dispatch and its inner calls re-enter this gate one by one — denying the wrapper would lock
     // the Lead out of even fusion_next_wait/fusion_next_read_state while the Sidekick owns the work.
-    if (enforcedWorkflow(binding) && role === 'lead' && !isLeadSafe(exec) && !FUSION_NEXT_TOOLS.has(exec.name)
+    if (enforcedWorkflow(binding) && role === 'lead' && binding.profile.leadConfinement !== 'user-mode'
+      && !isLeadSafe(exec) && !FUSION_NEXT_TOOLS.has(exec.name)
       && exec.name !== 'run_code' && exec.name !== 'subagent'
       && (!adaptiveWorkflow(binding) || state.currentWorkOrder)) {
       const check = (isShellTool(exec.name) || exec.name === 'ops_bash' || exec.name === 'ops_run')

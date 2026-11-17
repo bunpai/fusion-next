@@ -10,6 +10,8 @@ export interface PairChoice {
   outputTokens?: Partial<Record<'lead' | 'worker', number>>
   cacheKeepalive?: PairProfile['cacheKeepalive']
   compactor?: PairProfile['compactor']
+  /** Lead confinement under enforced-v3; default read-only. */
+  leadConfinement?: 'read-only' | 'user-mode'
 }
 export interface SettingsCatalog {
   groups: readonly { id: string; name: string; models: readonly {
@@ -47,6 +49,12 @@ export function validatePairChoice(value: unknown, catalog: SettingsCatalog): Pa
   }
   const cacheKeepalive = keepaliveChoice(raw.cacheKeepalive)
   const compactor = compactorChoice(raw.compactor)
+  let leadConfinement: PairChoice['leadConfinement']
+  if (raw.leadConfinement !== undefined) {
+    if (raw.leadConfinement !== 'read-only' && raw.leadConfinement !== 'user-mode')
+      throw new Error(bi('规划模型权限必须是 read-only 或 user-mode', 'Lead confinement must be read-only or user-mode'))
+    leadConfinement = raw.leadConfinement
+  }
   let outputTokens: PairChoice['outputTokens']
   if (raw.outputTokens !== undefined) {
     const value = raw.outputTokens
@@ -60,6 +68,7 @@ export function validatePairChoice(value: unknown, catalog: SettingsCatalog): Pa
   return { lead: route('lead', raw.lead), worker: route('worker', raw.worker),
     ...(outputTokens === undefined ? {} : { outputTokens }),
     ...(cacheKeepalive === undefined ? {} : { cacheKeepalive }),
+    ...(leadConfinement === undefined ? {} : { leadConfinement }),
     ...(compactor === undefined ? {} : { compactor: { ...compactor, route: route('压缩 · Compaction', compactor.route) } }) }
 }
 
@@ -77,8 +86,9 @@ export function profileFromChoice(pair: PairChoice): Record<string, unknown> {
 
 /** Product defaults; explicit legacy/benchmark profiles retain their old contract. */
 export function modelProfileFromChoice(pair: PairChoice): Record<string, unknown> {
-  const { outputTokens: _output, ...native } = pair
-  return { ...profileFromChoice(native), version: '0.2.0-enforced-v3', interactionMode: 'model-like', workflowPolicy: 'enforced-v3' }
+  const { outputTokens: _output, leadConfinement, ...native } = pair
+  return { ...profileFromChoice(native), version: '0.2.0-enforced-v3', interactionMode: 'model-like', workflowPolicy: 'enforced-v3',
+    ...(leadConfinement === undefined || leadConfinement === 'read-only' ? {} : { leadConfinement }) }
 }
 
 /** Keep existing default settings stable; expose explicit larger/smaller limits on reload. */
@@ -89,5 +99,6 @@ export function choiceFromProfile(profile: PairProfile): PairChoice {
   return { lead: profile.lead, worker: profile.worker,
     ...(profile.interactionMode !== 'model-like' && Object.keys(outputTokens).length ? { outputTokens } : {}),
     ...(profile.compactor === undefined ? {} : { compactor: profile.compactor }),
+    ...(profile.leadConfinement === undefined || profile.leadConfinement === 'read-only' ? {} : { leadConfinement: profile.leadConfinement }),
     ...(profile.cacheKeepalive === undefined ? {} : { cacheKeepalive: profile.cacheKeepalive }) }
 }

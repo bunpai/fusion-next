@@ -5,6 +5,8 @@ export interface PairChoice {
     outputTokens?: Partial<Record<'lead' | 'worker', number>>;
     cacheKeepalive?: PairProfile['cacheKeepalive'];
     compactor?: PairProfile['compactor'];
+    /** Lead confinement under enforced-v3; default read-only. */
+    leadConfinement?: 'read-only' | 'user-mode';
 }
 export interface SettingsCatalog {
     groups: readonly {

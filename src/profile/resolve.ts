@@ -85,6 +85,7 @@ export function completeProfile(raw: Record<string, unknown>, prompts: PromptBun
   const compactor = compactorChoice(raw.compactor)
   if (raw.interactionMode !== undefined && raw.interactionMode !== 'model-like') throw new Error('Unknown Fusion interaction mode')
   if (raw.workflowPolicy !== undefined && (!['enforced-v1', 'enforced-v2', 'enforced-v3'].includes(String(raw.workflowPolicy)) || raw.interactionMode !== 'model-like')) throw new Error('Unknown Fusion workflow policy')
+  if (raw.leadConfinement !== undefined && raw.leadConfinement !== 'read-only' && raw.leadConfinement !== 'user-mode') throw new Error('Unknown Fusion lead confinement')
   const profile: PairProfile = {
     schemaVersion: 1,
     id: String(raw.id),
@@ -94,6 +95,7 @@ export function completeProfile(raw: Record<string, unknown>, prompts: PromptBun
     quality: (raw.quality as PairProfile['quality']) ?? 'experimental',
     ...(raw.interactionMode === 'model-like' ? { interactionMode: 'model-like' as const } : {}),
     ...(raw.workflowPolicy === 'enforced-v1' || raw.workflowPolicy === 'enforced-v2' || raw.workflowPolicy === 'enforced-v3' ? { workflowPolicy: raw.workflowPolicy } : {}),
+    ...(raw.leadConfinement === 'user-mode' ? { leadConfinement: 'user-mode' as const } : {}),
     lead,
     worker,
     workerUpgradePath: (raw.workerUpgradePath as PhysicalRoute[]) ?? [],

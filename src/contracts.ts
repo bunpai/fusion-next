@@ -227,6 +227,10 @@ export interface PairProfile {
   interactionMode?: 'model-like'
   /** Frozen per selection. Absence preserves pre-enforcement sessions. */
   workflowPolicy?: 'enforced-v1' | 'enforced-v2' | 'enforced-v3'
+  /** Lead confinement: 'read-only' (default) keeps the Lead in the Host read-only
+   * sandbox; 'user-mode' lets the Lead run under the user's chosen mode instead
+   * — writes then bypass the review chain by the user's own choice. */
+  leadConfinement?: 'read-only' | 'user-mode'
   lead: PhysicalRoute
   worker: PhysicalRoute
   workerUpgradePath: readonly PhysicalRoute[]

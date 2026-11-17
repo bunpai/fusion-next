@@ -51,7 +51,7 @@ export declare class NativeRoleSandbox {
     leadShellProblem(exec: Readonly<ToolExecution>): string | undefined;
     /** Put the user's own mode back when the conversation leaves Fusion. */
     restore(agent: Agent): void;
-    /** A mode switch the user makes while Fusion is selected becomes the Sidekick's mode; the Lead stays read-only. */
+    /** A mode switch the user makes while Fusion is selected becomes the Sidekick's mode; the Lead stays read-only (or follows the pick under 'user-mode' confinement). */
     install(): () => void;
 }
 export {};

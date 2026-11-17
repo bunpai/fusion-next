@@ -113,6 +113,13 @@ export function FusionSettings() {
       <fieldset className="fusion-card" disabled={saving}>
         <ModelChoice role="Lead" route={draft.lead} catalog={state.catalog} onChange={route => { if (route) chooseModel('lead', route) }} />
         <ModelChoice role="Sidekick" route={draft.worker} catalog={state.catalog} onChange={route => { if (route) chooseModel('worker', route) }} />
+        <label>{tr(lang, '规划权限', 'Planner mode')}
+          <select aria-label={tr(lang, '规划模型权限', 'Planner access mode')} value={draft.leadConfinement ?? 'read-only'}
+            onChange={event => setDraft(value => ({ ...value, leadConfinement: event.target.value === 'user-mode' ? 'user-mode' : 'read-only' }))}>
+            <option value="read-only">{tr(lang, '只读（推荐：所有改动都过执行模型验收）', 'Read-only (recommended: all changes go through executor review)')}</option>
+            <option value="user-mode">{tr(lang, '跟随你的权限（规划模型可直接改，改动不经验收）', 'Follow your mode (planner can change files directly, unreviewed)')}</option>
+          </select>
+        </label>
         <details><summary>{tr(lang, '压缩模型 · 可选', 'Compaction model · optional')}</summary>
           <div className="fusion-limits">
             <p>{tr(lang, '默认由角色自己的模型压缩，也可单独指定（由所选账号计费）。', 'Each role compacts with its own model unless you pin another (billed to that account).')}</p>

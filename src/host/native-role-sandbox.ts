@@ -192,7 +192,7 @@ export class NativeRoleSandbox {
     this.#save({ ...intent, active: false })
   }
 
-  /** A mode switch the user makes while Fusion is selected becomes the Sidekick's mode; the Lead stays read-only. */
+  /** A mode switch the user makes while Fusion is selected becomes the Sidekick's mode; the Lead stays read-only (or follows the pick under 'user-mode' confinement). */
   install(): () => void {
     this.#dispose.push(this.ctx.on('session/event', (session, event) => {
       if (event.type !== 'sandbox/mode' || this.#writing) return
@@ -207,7 +207,11 @@ export class NativeRoleSandbox {
         try {
           const current = this.#intent(session.id)
           if (!current?.active) return
-          this.#set(session, 'read-only', current)
+          // 'user-mode' keeps the Lead on the user's pick (opt-out of confinement);
+          // otherwise the Lead is re-confined and the pick belongs to the Sidekick.
+          const leadTarget = binding.profile.leadConfinement === 'user-mode' ? current.mode : 'read-only'
+          this.#set(session, leadTarget, current)
+          if (leadTarget !== 'read-only') { this.#save(current); return }
           // Surface a one-off explanation for this trigger seq; a second runtime
           // listener reads the persisted seq and skips its own copy.
           if (!current.noticed?.includes(event.seq)) {
