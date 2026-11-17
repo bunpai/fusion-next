@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { tr, useLang } from './i18n.js'
 import type { PhysicalRoute } from '../contracts.js'
 import { useFusionStatus } from './status-polling.js'
-import { FusionTaskActivity, FusionTaskOverview } from './FusionStatus.js'
+import { FusionTaskActivity } from './FusionStatus.js'
 
 interface PairView {
   worker: PhysicalRoute | null
@@ -38,7 +38,9 @@ const styles = `
 .fusion-console .fusion-stage[data-attention=true]::before{background:var(--dsw-alias-state-error-primary)}
 `
 
-type Tab = 'task' | 'activity'
+// The session console keeps only the merged request/usage ledger: the pair
+// card above already carries the current task's stage, so a dedicated
+// "current task" tab duplicated the formation row.
 
 /**
  * Per-session console in the conversation View row: pair summary plus the
@@ -49,7 +51,6 @@ export function FusionConsole({ sessionId }: { sessionId?: string }) {
   const lang = useLang()
   const [pair, setPair] = useState<PairView>()
   const [pairFailed, setPairFailed] = useState(false)
-  const [tab, setTab] = useState<Tab>('task')
   const snapshot = useFusionStatus(sessionId ?? '', undefined)
   useEffect(() => {
     if (!sessionId) { setPair(undefined); return }
@@ -83,15 +84,7 @@ export function FusionConsole({ sessionId }: { sessionId?: string }) {
       : tr(lang, '本会话未启用 Fusion Next：在输入框旁的「执行」选择器挑一个执行模型即可开启双模型协作。',
           'Fusion Next is off in this session: pick an executor beside the model selector to start two-model collaboration.')}</p>}
     {task && <>
-      <div className="fusion-tabs" role="tablist">
-        <button role="tab" aria-selected={tab === 'task'} onClick={() => setTab('task')}>{tr(lang, '当前任务', 'Current task')}</button>
-        <button role="tab" aria-selected={tab === 'activity'} onClick={() => setTab('activity')}>{tr(lang, '请求与用量', 'Requests & usage')}</button>
-      </div>
-      {tab === 'task' && <>
-        <p className="fusion-stage" data-attention={task.attention}>{stage}</p>
-        <FusionTaskOverview sessionId={sessionId} task={task} />
-      </>}
-      {tab === 'activity' && <FusionTaskActivity task={task} />}
+      <FusionTaskActivity task={task} />
     </>}
     {pair?.worker && !task && <p className="fusion-console-note" role="status">
       {tr(lang, '尚无进行中的任务。发送消息后这里会显示任务阶段与用量。', 'No task yet. Task stage and usage appear here after you send a message.')}</p>}
