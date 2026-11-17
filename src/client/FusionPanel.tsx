@@ -13,6 +13,9 @@ interface RunningTask {
   detailEn?: string | null
   attention?: boolean
   usage?: { calls: number }
+  requests?: { startedAt: string }[]
+  contexts?: { checkedAt: string }[]
+  tools?: { startedAt: string }[]
 }
 interface RunningSession {
   sessionId: string
@@ -45,6 +48,17 @@ const styles = `
 .fusion-panel [role=alert]{color:var(--dsw-alias-state-error-primary)}
 .fusion-panel select,.fusion-panel input{font:inherit;color:var(--dsw-alias-label-primary);background-color:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l2);border-radius:8px;padding:4px 8px;color-scheme:inherit}
 .fusion-panel .fusion-empty{padding:48px 16px;text-align:center;color:var(--dsw-alias-label-secondary);border:1px dashed var(--dsw-alias-border-l2);border-radius:12px;font-size:13px}
+.fusion-panel .fusion-stale-note{color:var(--dsw-alias-label-secondary);font-size:12px;margin-top:14px}
+.fusion-panel .fusion-formations{display:grid;gap:12px}
+.fusion-panel .fusion-formation{display:grid;grid-template-columns:minmax(140px,1.4fr) repeat(4,minmax(110px,1fr));gap:0;border:1px solid var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-alias-bg-layer-1);overflow:hidden}
+.fusion-panel .fusion-formation>div{padding:10px 16px;min-width:0}
+.fusion-panel .fusion-formation>div+div{border-left:1px solid var(--dsw-alias-border-l2)}
+.fusion-panel .fusion-formation b{font-weight:600;font-size:12px;color:var(--dsw-alias-label-secondary)}
+.fusion-panel .fusion-formation small{display:block;font-size:13px;color:var(--dsw-alias-label-primary);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fusion-panel .fusion-formation small.fusion-formation-sub,.fusion-panel .fusion-formation small.fusion-formation-id{color:var(--dsw-alias-label-secondary);font-size:11px}
+.fusion-panel .fusion-formation[data-attention=true]{border-color:var(--dsw-alias-state-error-primary)}
+.fusion-panel .fusion-formation[data-attention=true]>div:nth-child(4) small{color:var(--dsw-alias-state-error-primary)}
+@media(max-width:720px){.fusion-panel .fusion-formation{grid-template-columns:repeat(2,minmax(0,1fr))}.fusion-panel .fusion-formation>div+div{border-left:0;border-top:1px solid var(--dsw-alias-border-l2)}.fusion-panel .fusion-formation>div:nth-child(-n+2){border-top:0}}
 .fusion-panel .fusion-running{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 20px}
 .fusion-panel .fusion-chip{display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border:1px solid var(--dsw-alias-border-l2);border-radius:999px;background:var(--dsw-alias-bg-layer-1);font-size:12px;line-height:1.3}
 .fusion-panel .fusion-chip b{font-weight:600;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -59,6 +73,14 @@ const styles = `
 `
 
 const FINISHED = new Set(['完成'])
+/** Last-activity timestamps inside a task view; a task idle this long is stale, not running. */
+const STALE_MS = 24 * 60 * 60 * 1000
+const lastActivity = (task: RunningTask | null): number => {
+  if (!task) return 0
+  const stamps = [task.requests?.at(-1)?.startedAt, task.contexts?.at(-1)?.checkedAt, task.tools?.at(-1)?.startedAt]
+    .map(stamp => (stamp ? Date.parse(stamp) : 0)).filter(stamp => Number.isFinite(stamp))
+  return stamps.length ? Math.max(...stamps) : 0
+}
 const stageOf = (lang: Lang, task: RunningTask | null) =>
   task ? (lang === 'en' ? task.stageEn ?? task.stage : task.stage) : tr(lang, '待命', 'idle')
 
@@ -96,7 +118,12 @@ export function FusionPanel() {
     const timer = setInterval(load, 10000)
     return () => { abort.abort(); clearInterval(timer) }
   }, [])
-  const running = sessions.filter(session => session.task && !FINISHED.has(session.task.stage))
+  // 'Running' = unfinished task with activity in the last 24h; older stale
+  // sessions stay countable but stop showing as live chips/formations.
+  const cutoff = Date.now() - STALE_MS
+  const fresh = sessions.filter(session => session.task && !FINISHED.has(session.task.stage) && lastActivity(session.task) >= cutoff)
+  const staleCount = sessions.filter(session => session.task && !FINISHED.has(session.task.stage) && lastActivity(session.task) < cutoff).length
+  const running = fresh.slice().sort((a, b) => lastActivity(b.task) - lastActivity(a.task))
   const labelOf = (session: RunningSession) =>
     session.title ?? session.sessionId.replace(/^session-/, '').split('-')[0]
   return <main className="fusion-panel" aria-label={tr(lang, 'Fusion Next 控制台', 'Fusion Next console')} data-ud-check="fusion-panel">
@@ -104,16 +131,7 @@ export function FusionPanel() {
     <h1>Fusion Next</h1>
     <p>{tr(lang, '每个会话一支「规划 + 执行」双人组：规划负责拆解、审查与接管，执行负责实际改动。这里汇总所有会话的运行记录与用量。',
       'Each session runs a planner–executor pair: the planner decomposes, reviews and takes over; the executor makes the changes. This page aggregates runs and usage across sessions.')}</p>
-    {sessions.length > 0 && <div className="fusion-running" aria-label={tr(lang, '启用 Fusion 的会话', 'Sessions on Fusion Next')}>
-      {sessions.map(session => {
-        const stage = stageOf(lang, session.task)
-        return <span key={session.sessionId} className="fusion-chip" data-attention={session.task?.attention ?? false} data-stage={session.task?.stage ?? ''}>
-          <span className="fusion-dot" />
-          <b>{labelOf(session)}</b>
-          <span>{stage}{session.task?.usage ? ` · ${session.task.usage.calls} 次` : ''}</span>
-        </span>
-      })}
-    </div>}
+    {/* The old chip strip duplicated the formation cards below; formations carry the same info with structure. */}
     <div className="fusion-tabs" role="tablist">
       <button role="tab" aria-selected={tab === 'running'} onClick={() => setTab('running')}>
         {tr(lang, `运行中${running.length ? `（${running.length}）` : ''}`, `Running${running.length ? ` (${running.length})` : ''}`)}</button>
@@ -125,17 +143,17 @@ export function FusionPanel() {
         ? tr(lang, '当前没有运行中的 Fusion 任务。在某个会话输入框旁的「执行」选择器挑一个执行模型即可开始。',
             'No fusion tasks are running. Pick an executor beside a session\'s model selector to start one.')
         : tr(lang, '正在读取…', 'Loading…')}</p>}
-      {running.length > 0 && <table>
-        <thead><tr><th>{tr(lang, '会话', 'Session')}</th><th>{tr(lang, '规划', 'Planner')}</th><th>{tr(lang, '执行', 'Executor')}</th><th>{tr(lang, '当前任务', 'Current task')}</th><th>{tr(lang, '请求', 'Requests')}</th></tr></thead>
-        <tbody>{running.map(session => <tr key={session.sessionId}>
-          <td><b>{labelOf(session)}</b><small>{session.sessionId}</small></td>
-          <td>{session.lead.model}<small>{session.lead.provider}</small></td>
-          <td>{session.worker.model}<small>{session.worker.provider}</small></td>
-          <td data-attention={session.task?.attention ?? false}>
-            {session.task?.attention ? '⚠ ' : ''}{stageOf(lang, session.task)}
-            <small>{lang === 'en' && session.task?.detailEn !== undefined ? session.task.detailEn : session.task?.detail ?? ''}</small></td>
-          <td>{session.task?.usage?.calls ?? '—'}</td>
-        </tr>)}</tbody></table>}
+      {running.length > 0 && <div className="fusion-formations">{running.map(session => <div key={session.sessionId} className="fusion-formation" data-attention={session.task?.attention ?? false}>
+        <div><b>{tr(lang, '会话', 'Session')}</b><small>{labelOf(session)}</small><small className="fusion-formation-id">{session.sessionId}</small></div>
+        <div><b>{tr(lang, '规划', 'Planner')}</b><small>{session.lead.model}</small><small className="fusion-formation-sub">{session.lead.provider}</small></div>
+        <div><b>{tr(lang, '执行', 'Executor')}</b><small>{session.worker.model}</small><small className="fusion-formation-sub">{session.worker.provider}</small></div>
+        <div><b>{tr(lang, '当前任务', 'Current task')}</b><small>{session.task?.attention ? '⚠ ' : ''}{stageOf(lang, session.task)}</small>
+          <small className="fusion-formation-sub">{lang === 'en' && session.task?.detailEn !== undefined ? session.task.detailEn : session.task?.detail ?? ''}</small></div>
+        <div><b>{tr(lang, '请求', 'Requests')}</b><small>{session.task?.usage?.calls ?? '—'}</small></div>
+      </div>)}</div>}
+      {staleCount > 0 && <p className="fusion-stale-note">{tr(lang,
+        `另有 ${staleCount} 个会话带着超过一天没动的任务 —— 多半是已中断的旧任务，不计入运行中。`,
+        `${staleCount} more session(s) hold tasks idle for over a day — likely interrupted old tasks, not counted as running.`)}</p>}
     </>}
     {tab === 'history' && <FusionHistory />}
     {tab === 'cache' && <FusionCache refresh={0} />}

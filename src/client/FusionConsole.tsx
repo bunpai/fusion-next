@@ -27,7 +27,10 @@ const styles = `
 .fusion-console .fusion-tabs button:hover{color:var(--dsw-alias-label-primary)}
 .fusion-console .fusion-tabs button[aria-selected=true]{color:var(--dsw-alias-label-primary);border-bottom-color:var(--dsw-alias-brand-primary);font-weight:600}
 .fusion-console .fusion-recovery fieldset{border:0;padding:0;display:flex;flex-direction:column;gap:10px}.fusion-console .fusion-recovery :is(button,select,input){font:inherit;color:var(--dsw-alias-label-primary);border:1px solid var(--dsw-alias-border-l2);border-radius:8px;padding:7px 10px;max-width:100%}.fusion-console .fusion-recovery :is(select,input,option,optgroup){background-color:var(--dsw-alias-bg-layer-1);color-scheme:inherit}.fusion-console .fusion-recovery button{cursor:pointer;background-color:var(--dsw-alias-button-elevated-fill)}.fusion-console .fusion-recovery [role=alert]{color:var(--dsw-alias-state-error-primary)}
-.fusion-console p{margin:4px 0 12px}.fusion-console h3{font-size:13px;margin:18px 0 6px;font-weight:600}
+.fusion-console p{margin:4px 0 12px}.fusion-console h3{font-size:12px;margin:0 0 8px;font-weight:600;color:var(--dsw-alias-label-secondary);letter-spacing:.01em}
+.fusion-console .fusion-card{margin:14px 0;padding:14px 16px;border:1px solid var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-alias-bg-layer-1)}
+.fusion-console .fusion-card h3{margin:14px 0 6px}
+.fusion-console .fusion-card>h3:first-child{margin-top:0}
 .fusion-console dl{margin:0;display:grid;grid-template-columns:minmax(72px,auto) minmax(0,1fr);gap:6px 14px}
 .fusion-console dt{color:var(--dsw-alias-label-secondary)}.fusion-console dd{margin:0;min-width:0}
 .fusion-console ul{list-style:none;margin:0;padding:0}.fusion-console li{padding:8px 0;border-bottom:1px solid var(--dsw-alias-border-l2)}
@@ -83,9 +86,9 @@ export function FusionConsole({ sessionId }: { sessionId?: string }) {
       ? tr(lang, '暂时无法读取 Fusion 状态，稍后自动重试。', 'Fusion status is unavailable right now; it retries automatically.')
       : tr(lang, '本会话未启用 Fusion Next：在输入框旁的「执行」选择器挑一个执行模型即可开启双模型协作。',
           'Fusion Next is off in this session: pick an executor beside the model selector to start two-model collaboration.')}</p>}
-    {task && <>
+    {task && <div className="fusion-card">
       <FusionTaskActivity task={task} />
-    </>}
+    </div>}
     {pair?.worker && !task && <p className="fusion-console-note" role="status">
       {tr(lang, '尚无进行中的任务。发送消息后这里会显示任务阶段与用量。', 'No task yet. Task stage and usage appear here after you send a message.')}</p>}
   </section>
