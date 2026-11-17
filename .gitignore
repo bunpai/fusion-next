@@ -11,3 +11,4 @@ __pycache__/
 benchmark/rebench/work/
 /node_modules
 fusion-next-*.tgz
+.tgrep/
