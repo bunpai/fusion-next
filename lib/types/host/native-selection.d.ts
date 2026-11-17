@@ -15,6 +15,7 @@ export declare const isFusionSelection: (route: {
 export type LeadInputModalities = () => Promise<readonly ModelModality[] | undefined>;
 /** Streams one request through the route's physical adapter via the LLM runtime. */
 export type FusionDispatch = (options: GenerateOptions, route: PhysicalRoute) => AsyncIterable<StreamChunk>;
+export type LeadModelInfo = () => Promise<LlmResolvedModelInfo | undefined>;
 /**
  * Virtual local provider: the session and agent model state stay on
  * fusion-next/auto (UI identity + journal intent), while every stream is
@@ -22,10 +23,10 @@ export type FusionDispatch = (options: GenerateOptions, route: PhysicalRoute) =>
  * (session title) take the same route and never block a turn.
  */
 export declare class FusionCatalogAdapter extends LlmAdapter {
-    private readonly leadInputModalities?;
+    private readonly leadModelInfo?;
     private readonly dispatch?;
     private readonly resolveLead?;
-    constructor(leadInputModalities?: LeadInputModalities | undefined, dispatch?: FusionDispatch | undefined, resolveLead?: (() => PhysicalRoute | undefined) | undefined);
+    constructor(leadModelInfo?: LeadModelInfo | undefined, dispatch?: FusionDispatch | undefined, resolveLead?: (() => PhysicalRoute | undefined) | undefined);
     providerInfo(provider: string): {
         id: string;
         name: string;
