@@ -1,6 +1,8 @@
 import type { Context } from '@deepseek-ai/cordis';
 import type { Agent } from '@deepseek-ai/dsh-agent';
+import { ReasoningEffortId } from '@deepseek-ai/dsh-llm';
 import type { MessageId } from '@deepseek-ai/dsh-llm';
+import { SessionId } from '@deepseek-ai/dsh-session';
 import type { PhysicalRoute } from '../contracts.js';
 export interface NativeWorkerRequest {
     readonly childId: string;
@@ -16,6 +18,54 @@ export interface NativeWorkerRequest {
 export interface NativeWorkerAcceptance {
     readonly childId: string;
     readonly messageId: MessageId;
+}
+interface WorkerStartRequest {
+    readonly parent: Agent;
+    readonly prompt: readonly {
+        readonly type: 'text';
+        readonly text: string;
+    }[];
+    readonly agentOptions: {
+        readonly provider: string;
+        readonly model: string;
+        readonly reasoningEffort?: ReturnType<typeof ReasoningEffortId>;
+    };
+    readonly maxDepth: number;
+    readonly persona?: string;
+    readonly toolFilter?: {
+        readonly allow: readonly string[];
+    };
+}
+interface StartedWorker {
+    readonly childId: string;
+    readonly messageId?: MessageId;
+}
+/** Structural view of the two DSH subagent seams. Only the branch that exists is called. */
+export interface SubagentSeam {
+    startActivation?(spec: {
+        readonly provider: string;
+        readonly label: string;
+        readonly childId: ReturnType<typeof SessionId>;
+        readonly delivery: 'parent';
+        readonly request: WorkerStartRequest;
+        readonly signal: AbortSignal;
+        /** 0.2.2 flat spec shape — host call sites pass parent/prompt/agentOptions
+         *  directly instead of nested under `request`. Sending both keeps 0.2.1
+         *  and 0.2.2 compatible; the unused shape is ignored. */
+        readonly parent?: WorkerStartRequest['parent'];
+        readonly prompt?: WorkerStartRequest['prompt'];
+        readonly agentOptions?: WorkerStartRequest['agentOptions'];
+        readonly maxDepth?: WorkerStartRequest['maxDepth'];
+    }): Promise<StartedWorker>;
+    startContinuable?(spec: {
+        readonly provider: string;
+        readonly label: string;
+        readonly childId: ReturnType<typeof SessionId>;
+        readonly request: WorkerStartRequest;
+        readonly signal: AbortSignal;
+    }): Promise<StartedWorker>;
+    drainChildren?(parent: Agent, childIds: readonly ReturnType<typeof SessionId>[]): Promise<void>;
+    drainContinuableChildren?(parent: Agent, childIds: readonly ReturnType<typeof SessionId>[]): Promise<void>;
 }
 /** Version-pinned public API adapter. It never calls an LLM adapter or runs a shell itself. */
 export declare class NativeWorkerTransport {
@@ -42,3 +92,4 @@ export declare class NativeWorkerTransport {
     /** Native release owns quiescence, persistence and handle disposal across HMR. */
     release(parent: Agent, childId: string): Promise<void>;
 }
+export {};

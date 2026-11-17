@@ -4,7 +4,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-compaction'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { GenerateOptions } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, GenerateOptions } from '@deepseek-ai/dsh-llm'
 import { NativeWorkerNotices } from './native-worker-notices.js'
 import { SessionId as NativeSessionId } from '@deepseek-ai/dsh-session'
 import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -44,6 +44,7 @@ import { NativeCacheKeepalive } from './native-keepalive.js'
 import type { KeepaliveClock } from './native-keepalive.js'
 import { hasStartActivation } from './subagent-seam.js'
 import { NativeWorkerTransport } from './native-worker.js'
+import type { SubagentSeam } from './native-worker.js'
 import { NativeFusionActivity } from './native-activity.js'
 import { captureExploration, citedEvidenceChanged, scopeDirectoryEmpty } from './native-exploration.js'
 import { workspaceWriterDenial } from './workspace-guard.js'
@@ -327,23 +328,20 @@ const SEPARATED_LEAD_TOOLS: readonly string[] = [...new Set([...READ_TOOLS, nati
   !['fusion_next_takeover', 'fusion_next_submit_result', 'fusion_next_finish_direct'].includes(name))])]
 
 /**
- * `subagent` for the Lead: only the paired executor model may run the child. `subagent_fork`
- * inherits the parent model, so it cannot route to the executor — deny it and say what to
- * use instead. The child's own tool surface stays under Host permissions; Fusion adds the
- * model check so a read delegation actually lands on the cheaper Sidekick model.
+ * `subagent` for the Lead reroutes the child to the paired executor through the Host's
+ * own subagent seam — the model need not (and cannot, on most hosts) pass provider/model
+ * itself. This is the spec the interception sends to startActivation.
  */
-export function subagentAccess(exec: Readonly<ToolExecution>, workerRoute: { provider: string; model: string }): string | undefined {
-  if (exec.name === 'subagent_fork') {
-    return 'FUSION_NEXT_LEAD_READ_ONLY: subagent_fork inherits the Lead model and cannot route to the executor. Call subagent with the paired executor provider and model.'
+export function subagentDelegateSpec(args: { description?: unknown; prompt?: unknown }, workerRoute: { provider: string; model: string }, maxDepth: number) {
+  const prompt = typeof args.prompt === 'string' && args.prompt.trim()
+    ? args.prompt
+    : String(args.description ?? 'Sidekick investigation')
+  return {
+    label: String(args.description ?? 'sidekick-investigation').slice(0, 40),
+    prompt: [{ type: 'text' as const, text: prompt }],
+    agentOptions: { provider: workerRoute.provider, model: workerRoute.model },
+    maxDepth,
   }
-  const args = exec.arguments as { provider?: unknown; model?: unknown }
-  if (!args.provider || !args.model) {
-    return `FUSION_NEXT_LEAD_READ_ONLY: call subagent with the paired executor: provider='${workerRoute.provider}' model='${workerRoute.model}'.`
-  }
-  if (args.provider !== workerRoute.provider || args.model !== workerRoute.model) {
-    return `FUSION_NEXT_LEAD_READ_ONLY: the paired executor is ${workerRoute.provider}/${workerRoute.model}; pass those exact provider and model values to subagent.`
-  }
-  return undefined
 }
 
 /** Test files by common conventions (Python, JS/TS, Go, Rust and generic test directories). */
@@ -405,6 +403,8 @@ export class FusionCoordinator {
   readonly #installErrors = new Map<string, string>()
   readonly #trackingErrors = new Map<TaskId, string>()
   readonly #leadMutations = new Map<TaskId, symbol>()
+  /** Agent ids of Lead-delegated subagents; they stay read-only for their lifetime. */
+  readonly #subagentChildren = new Set<string>()
   readonly #stoppingTasks = new Map<TaskId, number>()
   readonly #backgroundStops = new Map<TaskId, Promise<void>>()
   readonly #statusAbort = new AbortController()
@@ -531,6 +531,11 @@ export class FusionCoordinator {
     this.#dispose.push(this.effects.install())
     this.#dispose.push(ctx.on('tools/execute', async (exec, next) => {
       const owner = exec.agent && this.owner(exec.agent)
+      // A paired Lead's `subagent` delegates to the paired executor model — DSH's own
+      // subagent mechanism carrying the Sidekick route (the Devin sidekick pattern).
+      if (owner?.role === 'lead' && exec.name === 'subagent' && roleSeparated(owner.binding)) {
+        return await this.#subagentDelegate(exec, owner.binding) as Awaited<ReturnType<typeof next>>
+      }
       if (owner?.role !== 'lead' || !FUSION_NEXT_TOOLS.has(exec.name) || isRead(exec)) return next()
       const taskId = owner.binding.taskId
       if (this.#leadMutations.has(taskId)) throw new Error('Another Fusion control call is active; issue delegation, steering, wait and takeover sequentially')
@@ -544,14 +549,20 @@ export class FusionCoordinator {
     this.#dispose.push(ctx.tools.guard(exec => {
       if (!exec.agent) return undefined
       const owner = this.owner(exec.agent)
-      // The lease governs Fusion's own Lead and Worker only. Another session in
-      // the same directory is not made read-only by a Fusion writer.
-      if (!owner) return undefined
+      if (!owner) {
+        // A Lead-delegated subagent (rerouted to the executor model) is read-only:
+        // it has no Fusion owner, so every other Fusion gate skips it, but it must
+        // not become an off-ledger write path back into the workspace.
+        if (this.#subagentChildren.has(exec.agent.id) && !isRead(exec))
+          return 'FUSION_NEXT_LEAD_READ_ONLY: the delegated subagent is read-only; ask the Lead to use fusion_next_delegate for workspace changes'
+        return undefined
+      }
       try { this.scopes.assertReady(exec.agent) } catch (error) { return String(error) }
       const cwd = exec.agent.session.header.cwd
       return workspaceWriterDenial({
         fusionOwned: true,
-        exempt: isRead(exec) || FUSION_NEXT_TOOLS.has(exec.name) || exec.name === 'run_code',
+        exempt: isRead(exec) || FUSION_NEXT_TOOLS.has(exec.name) || exec.name === 'run_code'
+          || exec.name === 'subagent' || exec.name === 'subagent_fork' || exec.name === 'spawn_teammate',
         cwd,
         leaseHolder: cwd ? this.leases.current(cwd)?.holder : undefined,
         agentId: SessionId(exec.agent.id),
@@ -1130,16 +1141,16 @@ export class FusionCoordinator {
    * Every change goes through the Sidekick. The only exception is a takeover the
    * Host unlocks from objective state (#escalation), never the Lead's choice.
    */
-  #separatedLeadTools(agent: Agent, _state: TaskState, binding: SessionBinding): readonly string[] {
+  #separatedLeadTools(_agent: Agent, _state: TaskState, binding: SessionBinding): readonly string[] {
     // One catalog for the whole conversation. Tools sit in the prompt prefix, so a phase-dependent catalog
     // reset the frontier model's prompt cache at every handoff and review (round 4: 12 changes in one task,
     // Lead cache hit 69% against 94% alone). Phase rules stay enforced where they belong: in each tool and
     // the guard, whose refusals say what to do instead. Takeover appears only once the Host unlocks it.
     const base = this.#escalation(binding) ? [...SEPARATED_LEAD_TOOLS, 'fusion_next_takeover'] : SEPARATED_LEAD_TOOLS
-    // subagent is a host tool, not registered by us: include it only when the registry actually has it.
-    return this.ctx.tools?.schemas?.(agent)?.some(tool => tool.name === 'subagent')
-      ? [...base, 'subagent']
-      : base
+    // `subagent` is the Host's own delegation surface; the tools/execute hook reroutes
+    // it to the executor model. The role table is filtered against the registry, so an
+    // absent host tool is dropped harmlessly.
+    return [...base, 'subagent']
   }
 
   /** undefined = allow now, string = refuse, false = not decided here (continue the ordinary guard). */
@@ -1153,9 +1164,16 @@ export class FusionCoordinator {
     if (exec.name === 'fusion_next_submit_result' || exec.name === 'fusion_next_finish_direct') {
       return 'FUSION_NEXT_LEAD_READ_ONLY: in this Fusion mode the Lead never writes. Send corrections to the same Sidekick with fusion_next_rework.'
     }
-    // subagent routes a read-only investigation to the paired executor model — the same
-    // delegation Devin's fusion sidekick performs, through the Host's own subagent layer.
-    if (exec.name === 'subagent' || exec.name === 'subagent_fork') return this.#subagentAccess(exec, binding)
+    // subagent is the Host's own delegation surface: allow it here — the tools/execute
+    // hook reroutes the child to the paired executor model (Devin's sidekick pattern,
+    // through DSH's native subagent layer). Forks inherit the Lead model and context,
+    // so they cannot reroute; use subagent or fusion_next_explore instead.
+    if (exec.name === 'subagent') return hasStartActivation(this.ctx.subagents) ? false
+      : 'FUSION_NEXT_LEAD_READ_ONLY: the Host subagent seam is unavailable here; delegate read-only investigation with fusion_next_explore.'
+    if (exec.name === 'subagent_fork' || exec.name === 'spawn_teammate') {
+      this.workflow.denyEffect(binding)
+      return 'FUSION_NEXT_LEAD_READ_ONLY: forks and teammates cannot route to the paired executor. Use subagent for a Sidekick investigation or fusion_next_explore.'
+    }
     // run_code wraps every tool on hosts that publish the code-mode entry point; the nested calls it makes
     // re-enter this gate individually (nested shell still hits leadShellProblem), so denying the outer call
     // would dead-lock a sandboxed Lead that cannot even reach fusion_next_delegate.
@@ -1174,9 +1192,36 @@ export class FusionCoordinator {
     return 'FUSION_NEXT_LEAD_READ_ONLY: in this Fusion mode the Lead only reads and runs read-only commands. Every workspace change, file write or code execution goes to the Sidekick: use fusion_next_delegate (or fusion_next_delegate_text for writing without a workspace).'
   }
 
-  /** `subagent` for the Lead delegates to the paired executor model — the same sidekick model Devin's fusion pairs. `subagent_fork` inherits the Lead model and cannot route to the executor — deny it and say what to use instead. */
-  #subagentAccess(exec: Readonly<ToolExecution>, binding: SessionBinding): string | undefined {
-    return subagentAccess(exec, this.routeFor(binding, 'worker'))
+  /**
+   * Lead `subagent` calls are rerouted to the paired executor model through the Host's
+   * own subagent seam: the Lead sees the ordinary 'started subagent' flow, the child
+   * runs at Sidekick cost, and its report returns to the Lead's inbox like any native
+   * subagent. Returns the tool result that replaces the native call.
+   */
+  async #subagentDelegate(exec: Readonly<ToolExecution>, binding: SessionBinding): Promise<unknown> {
+    const worker = this.routeFor(binding, 'worker')
+    const parent = exec.agent!
+    const childId = NativeSessionId(randomUUID())
+    const spec = subagentDelegateSpec(exec.arguments as { description?: unknown; prompt?: unknown }, worker, (parent.session.header.delegationDepth ?? 0) + 1)
+    const subagents = this.ctx.subagents as SubagentSeam
+    if (!subagents.startActivation) throw new Error('FUSION_NEXT_LEAD_READ_ONLY: the Host subagent seam is unavailable; use fusion_next_explore for read-only investigation')
+    const accepted = await subagents.startActivation({
+      provider: 'spawn', label: spec.label, childId, delivery: 'parent',
+      parent, prompt: spec.prompt, agentOptions: spec.agentOptions, maxDepth: spec.maxDepth,
+      request: { parent, prompt: spec.prompt, agentOptions: spec.agentOptions, maxDepth: spec.maxDepth },
+      signal: exec.signal,
+    })
+    // The tools/execute chain expects ToolExecutionResult — a bare string breaks
+    // native effect tracking (`result.content.length` on undefined) — and the
+    // native `subagent` tool validates `value` against its declared output
+    // schema: exactly {kind:'activation', subagentId} (additionalProperties:false).
+    this.#subagentChildren.add(accepted.childId)
+    const text = `started subagent ${accepted.childId} on the paired executor (${worker.provider}/${worker.model})`
+    return {
+      isError: false as const,
+      value: { kind: 'activation', subagentId: accepted.childId },
+      content: [{ type: 'text', text }] as ContentBlock[],
+    }
   }
 
   /**

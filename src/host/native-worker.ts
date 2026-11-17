@@ -39,7 +39,7 @@ interface StartedWorker {
 }
 
 /** Structural view of the two DSH subagent seams. Only the branch that exists is called. */
-interface SubagentSeam {
+export interface SubagentSeam {
   startActivation?(spec: {
     readonly provider: string
     readonly label: string

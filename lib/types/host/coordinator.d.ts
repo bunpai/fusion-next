@@ -114,15 +114,28 @@ export declare function directTurnLeavesWorkOpen(userTexts: readonly string[], a
 /** Literal code spans (`like this`) a requirement asks for; a candidate that omits them gets flagged. */
 export declare const literalSpans: (text: string) => string[];
 /**
- * `subagent` for the Lead: only the paired executor model may run the child. `subagent_fork`
- * inherits the parent model, so it cannot route to the executor — deny it and say what to
- * use instead. The child's own tool surface stays under Host permissions; Fusion adds the
- * model check so a read delegation actually lands on the cheaper Sidekick model.
+ * `subagent` for the Lead reroutes the child to the paired executor through the Host's
+ * own subagent seam — the model need not (and cannot, on most hosts) pass provider/model
+ * itself. This is the spec the interception sends to startActivation.
  */
-export declare function subagentAccess(exec: Readonly<ToolExecution>, workerRoute: {
+export declare function subagentDelegateSpec(args: {
+    description?: unknown;
+    prompt?: unknown;
+}, workerRoute: {
     provider: string;
     model: string;
-}): string | undefined;
+}, maxDepth: number): {
+    label: string;
+    prompt: {
+        type: "text";
+        text: string;
+    }[];
+    agentOptions: {
+        provider: string;
+        model: string;
+    };
+    maxDepth: number;
+};
 /**
  * Existing test files whose original lines were removed or changed (pure additions are not listed). A Worker
  * that rewrites an old test to fit its change hides a regression the maintainers' test would catch

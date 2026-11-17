@@ -1,54 +1,39 @@
 import { describe, expect, it } from 'vitest'
-import { subagentAccess } from '../src/host/coordinator.js'
-import type { ToolExecution } from '@deepseek-ai/dsh-tools'
+import { subagentDelegateSpec } from '../src/host/coordinator.js'
 
-const route = { provider: 'cpa', model: 'devin/deepseek-v4-flash' }
-const exec = (name: string, args: Record<string, unknown> = {}): Readonly<ToolExecution> =>
-  ({ name, arguments: args }) as Readonly<ToolExecution>
+const worker = { provider: 'cpa', model: 'devin/deepseek-v4-flash' }
 
-describe('subagentAccess', () => {
-  it('allows subagent with the paired executor provider and model', () => {
-    expect(subagentAccess(exec('subagent', { provider: 'cpa', model: 'devin/deepseek-v4-flash', prompt: 'read a.sh' }), route)).toBeUndefined()
+describe('subagentDelegateSpec', () => {
+  it('routes the child to the paired executor model', () => {
+    const spec = subagentDelegateSpec({ description: 'explore', prompt: 'find callers' }, worker, 2)
+    expect(spec.agentOptions).toEqual({ provider: 'cpa', model: 'devin/deepseek-v4-flash' })
+    expect(spec.prompt[0].text).toBe('find callers')
+    expect(spec.maxDepth).toBe(2)
   })
 
-  it('denies subagent when provider is missing', () => {
-    const denied = subagentAccess(exec('subagent', { model: 'devin/deepseek-v4-flash', prompt: 'read' }), route)
-    expect(denied).toContain('FUSION_NEXT_LEAD_READ_ONLY')
-    expect(denied).toContain('cpa')
-    expect(denied).toContain('devin/deepseek-v4-flash')
+  it('passes the prompt through verbatim', () => {
+    const spec = subagentDelegateSpec({ prompt: 'compare a.sh vs b.sh' }, worker, 1)
+    expect(spec.prompt).toEqual([{ type: 'text', text: 'compare a.sh vs b.sh' }])
   })
 
-  it('denies subagent when model is missing', () => {
-    const denied = subagentAccess(exec('subagent', { provider: 'cpa', prompt: 'read' }), route)
-    expect(denied).toContain('FUSION_NEXT_LEAD_READ_ONLY')
-    expect(denied).toContain('devin/deepseek-v4-flash')
+  it('falls back to description when prompt is missing or blank', () => {
+    expect(subagentDelegateSpec({ description: 'diff summary' }, worker, 1).prompt[0].text).toBe('diff summary')
+    expect(subagentDelegateSpec({ description: 'diff summary', prompt: '   ' }, worker, 1).prompt[0].text).toBe('diff summary')
+    expect(subagentDelegateSpec({}, worker, 1).prompt[0].text).toBe('Sidekick investigation')
   })
 
-  it('denies subagent when both provider and model are missing', () => {
-    const denied = subagentAccess(exec('subagent', { prompt: 'read' }), route)
-    expect(denied).toContain('FUSION_NEXT_LEAD_READ_ONLY')
+  it('labels the child from the description', () => {
+    const spec = subagentDelegateSpec({ description: 'check exports' }, worker, 1)
+    expect(spec.label).toBe('check exports')
   })
 
-  it('denies subagent when provider mismatches the executor', () => {
-    const denied = subagentAccess(exec('subagent', { provider: 'other', model: 'devin/deepseek-v4-flash', prompt: 'read' }), route)
-    expect(denied).toContain('FUSION_NEXT_LEAD_READ_ONLY')
-    expect(denied).toContain('cpa')
+  it('caps the label at 40 characters', () => {
+    const spec = subagentDelegateSpec({ description: 'x'.repeat(80) }, worker, 1)
+    expect(spec.label.length).toBe(40)
   })
 
-  it('denies subagent when model mismatches the executor', () => {
-    const denied = subagentAccess(exec('subagent', { provider: 'cpa', model: 'devin/swe-2', prompt: 'read' }), route)
-    expect(denied).toContain('FUSION_NEXT_LEAD_READ_ONLY')
-    expect(denied).toContain('devin/deepseek-v4-flash')
-  })
-
-  it('denies subagent_fork because it inherits the lead model', () => {
-    const denied = subagentAccess(exec('subagent_fork', { prompt: 'read' }), route)
-    expect(denied).toContain('FUSION_NEXT_LEAD_READ_ONLY')
-    expect(denied).toContain('subagent')
-    expect(denied).toContain('paired executor')
-  })
-
-  it('allows subagent with no arguments beyond provider/model', () => {
-    expect(subagentAccess(exec('subagent', { provider: 'cpa', model: 'devin/deepseek-v4-flash' }), route)).toBeUndefined()
+  it('ignores caller-supplied provider/model args — the worker route wins', () => {
+    const spec = subagentDelegateSpec({ prompt: 'x', provider: 'evil', model: 'evil-model' } as never, worker, 1)
+    expect(spec.agentOptions).toEqual(worker)
   })
 })
