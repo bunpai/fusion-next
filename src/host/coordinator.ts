@@ -993,8 +993,13 @@ export class FusionCoordinator {
         return 'Worker report was submitted; wait for Lead feedback'
       }
     }
-    if (binding.profile.interactionMode === 'model-like' && !enforcedWorkflow(binding)) {
-      const stalled = this.#readStreak(exec, role)
+    // Read-streak cap: in plain model-like mode it applies to both roles; under an
+    // enforced workflow it only binds the Lead — the Worker owns execution and needs
+    // unrestricted reads, while Lead reconnaissance past the bound is pushed to the
+    // Sidekick (subagent reroute or fusion_next_explore).
+    if (binding.profile.interactionMode === 'model-like'
+      && (!enforcedWorkflow(binding) || (role === 'lead' && roleSeparated(binding)))) {
+      const stalled = this.#readStreak(exec, role, role === 'lead' && roleSeparated(binding))
       if (stalled) return stalled
     }
     const state = this.state(binding.taskId)
@@ -1042,14 +1047,17 @@ export class FusionCoordinator {
     // dispatch and its inner calls re-enter this gate one by one — denying the wrapper would lock
     // the Lead out of even fusion_next_wait/fusion_next_read_state while the Sidekick owns the work.
     if (enforcedWorkflow(binding) && role === 'lead' && !isLeadSafe(exec) && !FUSION_NEXT_TOOLS.has(exec.name)
-      && exec.name !== 'run_code'
+      && exec.name !== 'run_code' && exec.name !== 'subagent'
       && (!adaptiveWorkflow(binding) || state.currentWorkOrder)) {
       const check = (isShellTool(exec.name) || exec.name === 'ops_bash' || exec.name === 'ops_run')
         && this.#nestedCheckMatch(exec)
       const takeover = state.currentWorkOrder && this.#runtime(binding.taskId).takeover
       if (!check && !takeover) return this.workflow.denyEffect(binding)
     }
-    if (isLeadSafe(exec) || FUSION_NEXT_TOOLS.has(exec.name) || exec.name === 'run_code') return undefined
+    // 'subagent' is a delegation surface (rerouted to the executor and fenced
+    // read-only) — allow it here so it neither takes the write lease nor marks
+    // the Lead as a direct writer.
+    if (isLeadSafe(exec) || FUSION_NEXT_TOOLS.has(exec.name) || exec.name === 'run_code' || exec.name === 'subagent') return undefined
     if (binding.profile.interactionMode === 'model-like' && !enforcedWorkflow(binding) && role === 'lead') {
       const refused = this.#leadWriteBoundary(exec, binding)
       if (refused) return refused
@@ -1122,16 +1130,22 @@ export class FusionCoordinator {
    * call for 130+ calls). Consecutive reads with no action in between are
    * refused past a role-specific bound, so the model must decide with what it has.
    */
-  #readStreak(exec: Readonly<ToolExecution>, role: Role): string | undefined {
+  #readStreak(exec: Readonly<ToolExecution>, role: Role, separatedLead = false): string | undefined {
     const id = exec.agent!.id, limit = READ_STREAK[role]
     // Recovery paging and waiting on a job are required steps, not browsing: neither counts nor resets.
     if (exec.name === 'fusion_next_read_state' || exec.name === 'job_output') return undefined
-    if (!isRead(exec)) { this.#reads.delete(id); return undefined }
+    // A separated Lead's shell is Host-confined to read-only, so its shell calls count
+    // as reads — a long awk/diff/grep investigation is exactly what this cap exists for.
+    const countsAsRead = isRead(exec) || (separatedLead && isLeadShell(exec.name))
+    if (!countsAsRead) { this.#reads.delete(id); return undefined }
     const count = (this.#reads.get(id) ?? 0) + 1
     this.#reads.set(id, count)
     if (count <= limit) return undefined
     return `${count - 1} consecutive read-only calls without any other action. Stop reading and act on what you already know: `
-      + (role === 'lead' ? 'answer, delegate or record fusion_next_review_result with the evidence you have. Broad reading belongs to the Sidekick.'
+      + (role === 'lead'
+        ? separatedLead
+          ? 'answer, or hand the remaining investigation to the Sidekick: call subagent (Fusion reroutes it to the paired executor) or fusion_next_explore for workspace-sourced findings.'
+          : 'answer, delegate or record fusion_next_review_result with the evidence you have. Broad reading belongs to the Sidekick.'
         : 'implement, run the check, or submit your report with what remains unresolved.')
   }
 

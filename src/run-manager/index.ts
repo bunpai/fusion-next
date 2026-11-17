@@ -36,13 +36,33 @@ export class RunManager {
       .map(row => ({ eventId: String(row.event_id), runId: String(row.run_id) as FusionRunId,
         seq: Number(row.seq), type: String(row.type), payload: JSON.parse(String(row.payload_json)) as LifecycleEvent }))
   }
+  private eventsSince(cursor: number): StoredRunEvent[] {
+    return this.db.prepare(`SELECT event_id, run_id, seq, type, payload_json FROM fusion_events
+      WHERE CAST(json_extract(payload_json, '$.seq') AS INTEGER) > ?
+      ORDER BY CAST(json_extract(payload_json, '$.seq') AS INTEGER)`).all(cursor)
+      .map(row => ({ eventId: String(row.event_id), runId: String(row.run_id) as FusionRunId,
+        seq: Number(row.seq), type: String(row.type), payload: JSON.parse(String(row.payload_json)) as LifecycleEvent }))
+  }
+  /**
+   * Incremental replay: the journal is append-only with a monotonic global payload.seq,
+   * so replays resume from the cached post-COMMIT state and only reduce new events.
+   * replay() only ever sees committed rows here (it runs before this manager's INSERT),
+   * so caching inside the loop is rollback-safe.
+   */
+  private replayed: { state: LifecycleState; seq: number } | undefined
   private replay(): LifecycleState {
-    let state = emptyLifecycleState()
-    for (const item of this.events()) {
+    const base = this.replayed
+    const fresh = this.eventsSince(base?.seq ?? 0)
+    if (!fresh.length && base) return base.state
+    let state = base?.state ?? emptyLifecycleState()
+    let seq = base?.seq ?? 0
+    for (const item of fresh) {
       // B01 reducer uses a single total order. SQLite has per-run seq/revision;
       // translating the persisted ordered log is the B03 adapter's responsibility.
       const { seq: _seq, expectedRevision: _revision, ...payload } = item.payload
       state = reduceLifecycle(state, { ...payload, seq: state.seq + 1, expectedRevision: state.revision } as LifecycleEvent)
+      seq = item.payload.seq
+      this.replayed = { state, seq }
     }
     return state
   }
@@ -76,12 +96,16 @@ export class RunManager {
     this.ensureOpen()
     if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0) conflict('invalid expected revision')
     this.db.exec('BEGIN IMMEDIATE')
+    // A rolled-back reduce may already have recorded the event's fingerprint in
+    // the shared appliedEvents ledger (it lives outside the transaction); the
+    // catch branch must delete it or the retried append is skipped as a duplicate.
+    let reducedNext: LifecycleState | undefined
     try {
-      const prior = this.events()
-      const existing = prior.find(item => item.eventId === input.eventId)
-      if (existing) {
-        const { seq: _seq, expectedRevision: _revision, ...saved } = existing.payload
-        if (canonical(saved) !== canonical(input) || existing.runId !== input.runId) conflict('event id reused with different contents')
+      const row = this.db.prepare('SELECT event_id, run_id, payload_json FROM fusion_events WHERE event_id = ?').get(input.eventId)
+      if (row) {
+        const storedPayload = JSON.parse(String(row.payload_json)) as LifecycleEvent
+        const { seq: _seq, expectedRevision: _revision, ...saved } = storedPayload
+        if (canonical(saved) !== canonical(input) || String(row.run_id) !== input.runId) conflict('event id reused with different contents')
         this.db.exec('COMMIT')
         return this.replay()
       }
@@ -92,11 +116,16 @@ export class RunManager {
       const perRunSeq = Number(this.db.prepare('SELECT COALESCE(MAX(seq),0) AS seq FROM fusion_events WHERE run_id = ?').get(input.runId)?.seq) + 1
       const payload = { ...input, seq: before.seq + 1, expectedRevision: before.revision } as LifecycleEvent
       const next = reduceLifecycle(before, payload)
+      reducedNext = next
       this.persistProjection(next, input.runId, actualRevision + 1)
       this.db.prepare('INSERT INTO fusion_events (event_id, run_id, seq, type, payload_json, schema_version, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)')
         .run(input.eventId, input.runId, perRunSeq, input.type, canonical(payload), 1, Date.now())
       options.beforeCommit?.()
       this.db.exec('COMMIT')
+      // Advance the replay cache past the just-committed event; otherwise the next
+      // replay re-reduces it and the shared appliedEvents ledger marks it idempotent,
+      // returning a state missing this event's effects.
+      this.replayed = { state: next, seq: payload.seq }
       const committed: StoredRunEvent = { eventId: input.eventId, runId: input.runId, seq: perRunSeq, type: input.type, payload }
       for (const subscriber of this.subscribers) {
         try { subscriber(committed) } catch { /* user callbacks cannot invalidate a committed transaction */ }
@@ -104,6 +133,12 @@ export class RunManager {
       return next
     } catch (error) {
       if (this.db.isTransaction) this.db.exec('ROLLBACK')
+      // The shared appliedEvents ledger lives outside the transaction, so a
+      // rolled-back reduce has already recorded the fingerprint; remove it or a
+      // retried append of the same eventId would be skipped as a duplicate.
+      if (reducedNext && !Object.isFrozen(reducedNext.appliedEvents)) {
+        delete (reducedNext.appliedEvents as Record<string, string>)[input.eventId]
+      }
       throw error
     }
   }

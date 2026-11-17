@@ -24,6 +24,14 @@ export declare class RunManager {
     subscribe(callback: (message: StoredRunEvent) => void): () => void;
     private ensureOpen;
     private events;
+    private eventsSince;
+    /**
+     * Incremental replay: the journal is append-only with a monotonic global payload.seq,
+     * so replays resume from the cached post-COMMIT state and only reduce new events.
+     * replay() only ever sees committed rows here (it runs before this manager's INSERT),
+     * so caching inside the loop is rollback-safe.
+     */
+    private replayed;
     private replay;
     getState(): LifecycleState;
     getRun(runId: FusionRunId): FusionRun | undefined;

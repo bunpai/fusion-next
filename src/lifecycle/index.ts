@@ -294,13 +294,48 @@ export interface LifecycleState {
   readonly appliedEvents: Readonly<Record<string, string>>
 }
 const dictionary = <T>(source?: Readonly<Record<string, T>>): Record<string, T> => Object.assign(Object.create(null) as Record<string, T>, source)
-function deepFreeze<T>(value: T): T {
-  if (value && typeof value === 'object' && !Object.isFrozen(value)) {
+/**
+ * Copy-on-write dictionary: reads fall through to `source`, the first write clones.
+ * Values are always replaced (never mutated in place) inside reduceLifecycle, so
+ * untouched dictionaries can be shared with the previous state at O(1) cost.
+ */
+interface LazyDict<V> { readonly proxy: Record<string, V>; materialize(): Record<string, V> }
+const lazyDict = <V>(source: Readonly<Record<string, V>>): LazyDict<V> => {
+  let copy: Record<string, V> | undefined
+  const ensure = (): Record<string, V> => (copy ??= dictionary(source))
+  const view = (): Readonly<Record<string, V>> => copy ?? source
+  // Proxy target is an empty object: the frozen source's non-configurable properties
+  // would make descriptor traps lie, so all lookups delegate to the view instead.
+  const proxy = new Proxy({} as Record<string, V>, {
+    get(_target, key) { return view()[key as string] },
+    set(_target, key, value) { ensure()[key as string] = value; return true },
+    deleteProperty(_target, key) { delete ensure()[key as string]; return true },
+    has(_target, key) { return key in view() },
+    ownKeys() { return Reflect.ownKeys(view()) },
+    getOwnPropertyDescriptor(_target, key) {
+      const current = view()
+      if (!(key in current)) return undefined
+      return { enumerable: true, configurable: true, writable: true, value: current[key as string] }
+    },
+  })
+  return { proxy, materialize: () => copy ?? source as Record<string, V> }
+}
+function deepFreeze<T>(value: T, except?: object): T {
+  if (value && typeof value === 'object' && value !== except && !Object.isFrozen(value)) {
     Object.freeze(value)
-    for (const nested of Object.values(value)) deepFreeze(nested)
+    for (const nested of Object.values(value)) deepFreeze(nested, except)
   }
   return value
 }
+/**
+ * appliedEvents is an append-only idempotency ledger read only inside this reducer.
+ * Across one reduce chain it stays a single shared mutable dictionary (marked in this
+ * set): each event appends one key in O(1) instead of copying the whole record.
+ * The dictionary is attached unfrozen to every produced state, so older states see
+ * later entries — acceptable because the field is a write-once ledger, not a value
+ * consumers diff between states.
+ */
+const MUTABLE_APPLIED = new WeakSet<Record<string, string>>()
 const stable = (value: unknown): string => JSON.stringify(value, (_key, item: unknown) =>
   item && typeof item === 'object' && !Array.isArray(item)
     ? Object.fromEntries(Object.entries(item as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b))) : item)
@@ -347,7 +382,25 @@ export function reduceLifecycle(state: LifecycleState, event: LifecycleEvent): L
   }
   assert(event.seq === state.seq + 1, `out-of-order seq: expected ${state.seq + 1}`)
   assert(event.expectedRevision === state.revision, `stale revision: expected ${state.revision}`)
-  const runs = dictionary(state.runs), aliases = dictionary(state.aliases), generations = dictionary(state.generations), lineage = dictionary(state.lineage), effects = dictionary(state.effects), transitions = dictionary(state.transitions), authorities = dictionary(state.authorities), assignments = dictionary(state.assignments), reports = dictionary(state.reports), worktrees = dictionary(state.worktrees), evidence = dictionary(state.evidence), requirements = dictionary(state.requirements), checkpoints = dictionary(state.checkpoints), budgets = dictionary(state.budgets), caches = dictionary(state.caches), delegation = { DIRECT: { ...state.delegation.DIRECT }, DELEGATE: { ...state.delegation.DELEGATE } }
+  // Copy-on-write dictionaries: untouched fields keep sharing the previous state's
+  // frozen records, so a single-event reduction costs O(touched dictionaries).
+  const lazy = {
+    runs: lazyDict(state.runs), aliases: lazyDict(state.aliases), generations: lazyDict(state.generations),
+    lineage: lazyDict(state.lineage), effects: lazyDict(state.effects), transitions: lazyDict(state.transitions),
+    authorities: lazyDict(state.authorities), assignments: lazyDict(state.assignments), reports: lazyDict(state.reports),
+    worktrees: lazyDict(state.worktrees), evidence: lazyDict(state.evidence), requirements: lazyDict(state.requirements),
+    checkpoints: lazyDict(state.checkpoints), budgets: lazyDict(state.budgets), caches: lazyDict(state.caches),
+  }
+  const runs = lazy.runs.proxy, aliases = lazy.aliases.proxy, generations = lazy.generations.proxy,
+    lineage = lazy.lineage.proxy, effects = lazy.effects.proxy, transitions = lazy.transitions.proxy,
+    authorities = lazy.authorities.proxy, assignments = lazy.assignments.proxy, reports = lazy.reports.proxy,
+    worktrees = lazy.worktrees.proxy, evidence = lazy.evidence.proxy, requirements = lazy.requirements.proxy,
+    checkpoints = lazy.checkpoints.proxy, budgets = lazy.budgets.proxy, caches = lazy.caches.proxy,
+    delegation = { DIRECT: { ...state.delegation.DIRECT }, DELEGATE: { ...state.delegation.DELEGATE } }
+  // appliedEvents is the shared append-only ledger for this reduce chain (O(1) per event).
+  const appliedEvents = MUTABLE_APPLIED.has(state.appliedEvents as Record<string, string>)
+    ? state.appliedEvents as Record<string, string>
+    : (() => { const shared = dictionary(state.appliedEvents); MUTABLE_APPLIED.add(shared); return shared })()
   const current = runs[event.runId]
   const requireRun = (): FusionRun => current ?? invalid('unknown run')
   const requireEffect = (effectId: string): EffectRecord => effects[effectId] ?? invalid('unknown effect')
@@ -920,8 +973,16 @@ export function reduceLifecycle(state: LifecycleState, event: LifecycleEvent): L
     }
     default: invalid('unknown event type')
   }
-  return deepFreeze({ revision: state.revision + 1, seq: event.seq, runs, aliases, generations, lineage, effects, transitions, authorities, assignments, reports, worktrees, evidence, requirements, checkpoints, budgets, caches, delegation,
-    appliedEvents: dictionary({ ...state.appliedEvents, [event.eventId]: fingerprint }) })
+  appliedEvents[event.eventId] = fingerprint
+  const next = deepFreeze({ revision: state.revision + 1, seq: event.seq,
+    runs: lazy.runs.materialize(), aliases: lazy.aliases.materialize(), generations: lazy.generations.materialize(),
+    lineage: lazy.lineage.materialize(), effects: lazy.effects.materialize(), transitions: lazy.transitions.materialize(),
+    authorities: lazy.authorities.materialize(), assignments: lazy.assignments.materialize(), reports: lazy.reports.materialize(),
+    worktrees: lazy.worktrees.materialize(), evidence: lazy.evidence.materialize(), requirements: lazy.requirements.materialize(),
+    checkpoints: lazy.checkpoints.materialize(), budgets: lazy.budgets.materialize(), caches: lazy.caches.materialize(),
+    delegation,
+    appliedEvents }, appliedEvents)
+  return next
 }
 export function replayLifecycle(events: readonly LifecycleEvent[], initial = emptyLifecycleState()): LifecycleState {
   return events.reduce(reduceLifecycle, initial)
