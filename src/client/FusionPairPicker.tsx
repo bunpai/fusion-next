@@ -89,7 +89,14 @@ export function FusionPairPicker({ sessionId, directory, load }: FusionPairPicke
       .then(async data => data === undefined ? void refreshViaCommand() : setView(data))
       .catch(() => void refreshViaCommand())
   }
-  useEffect(() => { load(); refresh() }, [load, sessionId])
+  useEffect(() => {
+    load(); refresh()
+    // The executor-mode badge rides the sandbox-intent document, which only
+    // exists after the session's first request — poll so it surfaces without
+    // a page switch.
+    const timer = setInterval(refresh, 15000)
+    return () => clearInterval(timer)
+  }, [load, sessionId])
   const choose = (value: string) => {
     if (busy) return
     setBusy(true); setError(undefined)
