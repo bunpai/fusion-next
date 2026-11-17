@@ -5,7 +5,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-model-selection/client'
 import { FusionSettings } from './FusionSettings.js'
-import { FusionDockAttention, FusionHint } from './FusionHint.js'
+import { FusionHint } from './FusionHint.js'
 import { FusionPairPicker } from './FusionPairPicker.js'
 import { FusionUsageBadge } from './FusionUsageBadge.js'
 import { FusionTool, fusionControlTools } from './FusionTool.js'
@@ -53,10 +53,6 @@ export function apply(ctx: Context): void {
       name: 'conversation.input.right', id: 'fusion-next-usage', order: 6,
       inject: directoryInject,
     }, FusionUsageBadge))
-    scope.slots.inject('conversation.input.dock', () => scope.slots.register({
-      name: 'conversation.input.dock', id: 'fusion-next-attention', order: 19,
-      inject: directoryInject,
-    }, FusionDockAttention))
     scope.slots.inject('conversation.input.dock', () => scope.slots.register({
       name: 'conversation.input.dock', id: 'fusion-next-configuration', order: 20,
       inject: directoryInject,
