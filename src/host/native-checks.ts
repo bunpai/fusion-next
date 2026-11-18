@@ -76,7 +76,7 @@ export function freezeChecks(order: WorkOrder, root: string, definitions: readon
     if (definition.baseline !== undefined && (definition.baseline !== 'no-new-failures' || definition.kind !== 'test'
       || !(BASELINE_PARSERS as readonly string[]).includes(definition.parser))) {
       throw new Error(`Acceptance check ${definition.id}: baseline "no-new-failures" needs kind "test" with a parser that names each failing test (${BASELINE_PARSERS.join(', ')}); `
-        + `this check has kind "${definition.kind}" and parser "${definition.parser}". Retry fusion_next_delegate with `
+        + `this check has kind "${definition.kind}" and parser "${definition.parser}". For a plain assertion command use kind "static-check", parser "exit-code" and NO baseline — it passes when the command exits 0. Retry fusion_next_delegate with `
         + (definition.parser === 'mocha' ? 'the mocha command run with --reporter tap and parser "tap", ' : 'one of those parsers for this suite, ')
         + 'or without baseline so every test must pass.')
     }
@@ -539,8 +539,9 @@ export async function runBaselineChecks(input: CheckInput & { checks: readonly F
     const parsed = run.evidence.state === 'completed' && !run.truncated ? parseTestFailures(check.definition.parser, run.text) : undefined
     if (!parsed) {
       throw new Error(`Baseline run of ${check.definition.id} could not be read (exit ${run.evidence.exitCode}, state ${run.evidence.state}). `
-        + `It needs a completed run with ${BASELINE_OUTPUT[check.definition.parser as BaselineParser]}. Retry fusion_next_delegate with a runnable command, or drop baseline to require every test to pass. `
-        + `Output tail: ${run.text.slice(-600)}`)
+        + `For a plain assertion command use kind "static-check" with parser "exit-code" and NO baseline — it passes when the command exits 0. `
+        + `baseline "no-new-failures" is only for real test suites whose parser names each failure (${BASELINE_PARSERS.join(', ')}); this run needs a completed run with ${BASELINE_OUTPUT[check.definition.parser as BaselineParser]}. `
+        + `Retry fusion_next_delegate with a runnable command, or drop baseline to require every test to pass. Output tail: ${run.text.slice(-600)}`)
     }
     out.push({ definition: check.definition, plan: { ...check.plan, allowedFailures: parsed.failedIds } })
   }

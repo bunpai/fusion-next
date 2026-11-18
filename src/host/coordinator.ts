@@ -2329,7 +2329,7 @@ export class FusionCoordinator {
       kind: { type: 'string', enum: ['test', 'static-check'], description: 'Usually inferred from parser.' },
       timeoutSeconds: { type: 'integer', description: `Optional per-check limit, 1–${MAX_CHECK_SECONDS} seconds.` },
       definitionPaths: { ...optionalStringList, description: 'Existing acceptance files whose bytes must remain unchanged; default none. Do not list files the Worker will create or edit.' },
-      baseline: { type: 'string', enum: ['no-new-failures'], description: `For a broad regression suite (${BASELINE_PARSERS.join(', ')}) that may already have unrelated failing tests: the Host runs it once on the untouched workspace and then requires no new failures. Omit for the tests this task must make pass.` },
+      baseline: { type: 'string', enum: ['no-new-failures'], description: `For a broad regression suite (${BASELINE_PARSERS.join(', ')}) that may already have unrelated failing tests: the Host runs it once on the untouched workspace and then requires no new failures. Omit for the tests this task must make pass — and never set it on a plain assertion command (use parser "exit-code" instead).` },
     } } as const
     dispose.push(scope.tools.register(defineTool({ name: 'fusion_next_delegate', description: 'Delegate a bounded implementation to an independent persistent Worker. After direct Lead preparation, validated delegation transfers the quiescent write lease without completing the task. By default wait for its report and native checks; block=false returns while the Worker runs.',
       parameters: { goal: { type: 'string', description: 'The complete implementation outcome, including all planned stages.', required: true },
