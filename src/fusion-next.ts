@@ -330,16 +330,49 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   // sees every request. A clearly simple newest-user turn reroutes to the
   // paired executor — its sandbox/gates stay the Lead's, the planner never runs.
   const rerouted = new WeakSet<GenerateOptions>()
+  const routeVerdicts = new Map<string, 'worker' | 'lead'>()
+  // The planner decides whether a turn is simple enough for the executor alone.
+  // One tiny one-shot call per new user message (cached by session+text) — much
+  // cheaper than letting the Lead run the whole turn, more reliable than a
+  // keyword heuristic. Any failure falls back to the Lead.
+  const judgeWithPlanner = async (lead: PhysicalRoute, text: string): Promise<'worker' | 'lead'> => {
+    const prompt = [
+      'Decide whether the newest user request can be fully handled by a cheaper junior executor.',
+      'SIMPLE = read-only investigation or a short factual answer (reading, searching, explaining, comparing, counting, summarising) with no file changes needed.',
+      'COMPLEX = anything that writes, executes, fixes, builds, or needs careful multi-step judgement.',
+      'Answer with exactly one word: SIMPLE or COMPLEX. Request:',
+      text.length > 4000 ? `${text.slice(0, 2000)}\n…\n${text.slice(-2000)}` : text,
+    ].join('\n')
+    try {
+      const judge: GenerateOptions = {
+        provider: lead.provider, model: lead.model, maxTokens: 8, temperature: 0,
+        messages: [{ role: 'user', content: [{ type: 'text', text: prompt }] }],
+        purpose: 'session-title' as GenerateOptions['purpose'],
+      }
+      rerouted.add(judge)
+      let out = ''
+      for await (const chunk of ctx.llm.stream(judge)) {
+        if (chunk.type === 'text-delta') out += chunk.text
+      }
+      return /simple/i.test(out.trim()) ? 'worker' : 'lead'
+    } catch { return 'lead' }
+  }
   ctx.effect(() => ctx.on('llm/stream', async function* (request, next) {
     if (rerouted.has(request) || request.purpose || !request.sessionId) { yield* next(); return }
     const binding = bindings.read(String(request.sessionId))?.binding
     const worker = binding?.selected ? binding.profile.worker : undefined
-    if (!worker?.model) { yield* next(); return }
+    const lead = resolveFusionLead()
+    if (!worker?.model || !lead?.model) { yield* next(); return }
     // A live work order means the Lead is orchestrating (reviews, reworks,
     // settles) — those requests must never leave the planner.
     const runtimeDoc = store.readDocument(`runtime:${binding?.taskId ?? ''}`)?.value as { currentWorkOrder?: { id?: string } } | undefined
     if (runtimeDoc?.currentWorkOrder?.id) { yield* next(); return }
-    if (classifyUserText(lastRealUserText(request.messages ?? [])) !== 'worker') { yield* next(); return }
+    const text = lastRealUserText(request.messages ?? [])
+    if (!text) { yield* next(); return }
+    const verdictKey = `${request.sessionId}:${text.slice(0, 500)}`
+    const verdict = routeVerdicts.get(verdictKey) ?? await judgeWithPlanner(lead, text)
+    routeVerdicts.set(verdictKey, verdict)
+    if (verdict !== 'worker') { yield* next(); return }
     const forward: GenerateOptions = { ...request, provider: worker.provider, model: worker.model, reasoningEffort: undefined }
     rerouted.add(forward)
     yield* ctx.llm.stream(forward)
