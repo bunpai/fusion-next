@@ -299,13 +299,20 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     .filter(block => block?.type === 'text')
     .map(block => String(block.text ?? ''))
     .join(' ').trim()
-  const lastRealUserText = (messages: readonly { role?: string; content?: unknown }[]): string => {
-    for (const message of [...messages].reverse()) {
+  const lastRealUserText = (messages: readonly { role?: string; content?: unknown }[]): { text: string; fresh: boolean } => {
+    let lastRealIndex = -1
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index]
       if (message?.role !== 'user') continue
       const text = userTextOf(message)
-      if (text && !INJECTED_SHAPE.test(text) && !NOTICE_SHAPE.test(text)) return text
+      if (text && !INJECTED_SHAPE.test(text) && !NOTICE_SHAPE.test(text)) { lastRealIndex = index; break }
     }
-    return ''
+    if (lastRealIndex < 0) return { text: '', fresh: false }
+    // fresh = nothing but tool/system chatter after the user text: the turn's
+    // first step. Any assistant message after it means the request is mid-turn
+    // — an injected notice, not a new user intent, so the verdict stands.
+    const fresh = !messages.slice(lastRealIndex + 1).some(message => message?.role === 'assistant')
+    return { text: userTextOf(messages[lastRealIndex]), fresh }
   }
   const classifyUserText = (text: string): 'worker' | 'lead' => {
     if (!text) return 'lead'
@@ -321,7 +328,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
       const binding = bindings.read(String(options.sessionId))?.binding
       const worker = binding?.selected ? binding.profile.worker : undefined
       if (!worker?.model) return lead
-      return classifyUserText(lastRealUserText(options.messages ?? [])) === 'worker' ? worker : lead
+      return classifyUserText(lastRealUserText(options.messages ?? []).text) === 'worker' ? worker : lead
     } catch { return lead }
   }
   ctx.effect(() => ctx.llm.registerAdapter([FUSION_NEXT_PROVIDER], new FusionCatalogAdapter(leadModelInfo, fusionDispatch, resolveFusionRoute)))
@@ -367,11 +374,15 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     // settles) — those requests must never leave the planner.
     const runtimeDoc = store.readDocument(`runtime:${binding?.taskId ?? ''}`)?.value as { currentWorkOrder?: { id?: string } } | undefined
     if (runtimeDoc?.currentWorkOrder?.id) { yield* next(); return }
-    const text = lastRealUserText(request.messages ?? [])
+    const { text, fresh } = lastRealUserText(request.messages ?? [])
     if (!text) { yield* next(); return }
     const verdictKey = `${request.sessionId}:${text.slice(0, 500)}`
-    const verdict = routeVerdicts.get(verdictKey) ?? await judgeWithPlanner(lead, text)
-    routeVerdicts.set(verdictKey, verdict)
+    let verdict = routeVerdicts.get(verdictKey)
+    if (!verdict) {
+      if (!fresh) { yield* next(); return }
+      verdict = await judgeWithPlanner(lead, text)
+      routeVerdicts.set(verdictKey, verdict)
+    }
     if (verdict !== 'worker') { yield* next(); return }
     const forward: GenerateOptions = { ...request, provider: worker.provider, model: worker.model, reasoningEffort: undefined }
     rerouted.add(forward)
