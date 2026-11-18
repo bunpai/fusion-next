@@ -284,7 +284,66 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     } catch { /* a read failure leaves the soft-finish path in charge */ }
     return undefined
   }
-  ctx.effect(() => ctx.llm.registerAdapter([FUSION_NEXT_PROVIDER], new FusionCatalogAdapter(leadModelInfo, fusionDispatch, resolveFusionLead)))
+  // Prefix routing: a paired session's newest user message decides which physical
+  // model runs the whole turn. Clearly simple read/question turns go straight to
+  // the paired executor — the Lead's read-only sandbox already fences its tools,
+  // so the cheap model does the reading and the expensive model never wakes.
+  // Write intent, injected notices, and auxiliary calls (purpose) stay on Lead.
+  const WRITE_INTENT = /写|改|实现|创建|生成|开发|重构|修复|部署|安装|删除|更新|新增|添加|替换|编辑|做一|做个|优化|调整|跑|执行|运行|测试|提交|build|write|implement|create|fix|refactor|deploy|install|update|remove|edit|add|generat|change|delete|patch|commit|rename|move|make|optimi|test|run\b/i
+  const READ_INTENT = /看|查|读|分析|解释|比较|列出|统计|找|搜索|梳理|总结|了解|哪里|什么|哪|几|多少|是否|有没有|为什么|怎么|grep|read|check|list|analy|explain|compare|find|search|show|describe|what|how|why|where|who|which|summar|review|trace|count|enum/i
+  const NOTICE_SHAPE = /Fusion Next|fusion_next|subagent|worker|后台|执行模型|Sidekick|settled|review-ready|exploration/i
+  // Injected host/plugin context lands as role:'user' messages around the real
+  // input — skip them when picking the message to classify.
+  const INJECTED_SHAPE = /^\s*(Current runtime context|<system-reminder|<hindsight|\[MNEMON|MNEMON RUNTIME|<acp|<available_skills|USER\.md|MEMORY\.md|<skill_content|<context)/
+  const userTextOf = (message: { content?: unknown } | undefined): string => (Array.isArray(message?.content) ? message.content as { type?: string; text?: string }[] : [])
+    .filter(block => block?.type === 'text')
+    .map(block => String(block.text ?? ''))
+    .join(' ').trim()
+  const lastRealUserText = (messages: readonly { role?: string; content?: unknown }[]): string => {
+    for (const message of [...messages].reverse()) {
+      if (message?.role !== 'user') continue
+      const text = userTextOf(message)
+      if (text && !INJECTED_SHAPE.test(text) && !NOTICE_SHAPE.test(text)) return text
+    }
+    return ''
+  }
+  const classifyUserText = (text: string): 'worker' | 'lead' => {
+    if (!text) return 'lead'
+    if (WRITE_INTENT.test(text)) return 'lead'
+    if (NOTICE_SHAPE.test(text)) return 'lead'
+    if (READ_INTENT.test(text) || text.length <= 600) return 'worker'
+    return 'lead'
+  }
+  const resolveFusionRoute = (options?: GenerateOptions): PhysicalRoute | undefined => {
+    const lead = resolveFusionLead()
+    if (!options || options.purpose || !options.sessionId) return lead
+    try {
+      const binding = bindings.read(String(options.sessionId))?.binding
+      const worker = binding?.selected ? binding.profile.worker : undefined
+      if (!worker?.model) return lead
+      return classifyUserText(lastRealUserText(options.messages ?? [])) === 'worker' ? worker : lead
+    } catch { return lead }
+  }
+  ctx.effect(() => ctx.llm.registerAdapter([FUSION_NEXT_PROVIDER], new FusionCatalogAdapter(leadModelInfo, fusionDispatch, resolveFusionRoute)))
+  // Prefix routing on the physical path: pair sessions stream straight through
+  // their physical adapter, so the llm/stream waterfall is the only seam that
+  // sees every request. A clearly simple newest-user turn reroutes to the
+  // paired executor — its sandbox/gates stay the Lead's, the planner never runs.
+  const rerouted = new WeakSet<GenerateOptions>()
+  ctx.effect(() => ctx.on('llm/stream', async function* (request, next) {
+    if (rerouted.has(request) || request.purpose || !request.sessionId) { yield* next(); return }
+    const binding = bindings.read(String(request.sessionId))?.binding
+    const worker = binding?.selected ? binding.profile.worker : undefined
+    if (!worker?.model) { yield* next(); return }
+    // A live work order means the Lead is orchestrating (reviews, reworks,
+    // settles) — those requests must never leave the planner.
+    const runtimeDoc = store.readDocument(`runtime:${binding?.taskId ?? ''}`)?.value as { currentWorkOrder?: { id?: string } } | undefined
+    if (runtimeDoc?.currentWorkOrder?.id) { yield* next(); return }
+    if (classifyUserText(lastRealUserText(request.messages ?? [])) !== 'worker') { yield* next(); return }
+    const forward: GenerateOptions = { ...request, provider: worker.provider, model: worker.model, reasoningEffort: undefined }
+    rerouted.add(forward)
+    yield* ctx.llm.stream(forward)
+  }, { prepend: true }))
   ctx.effect(() => installNativeFusionSelection(ctx, {
     coordinator: () => runtime, profile: () => defaultProfile,
     // C01 activation seam: once a session commits to Fusion, the journal-backed

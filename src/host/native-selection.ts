@@ -30,7 +30,7 @@ export class FusionCatalogAdapter extends LlmAdapter {
   constructor(
     private readonly leadModelInfo?: LeadModelInfo,
     private readonly dispatch?: FusionDispatch,
-    private readonly resolveLead?: () => PhysicalRoute | undefined,
+    private readonly resolveLead?: (options?: GenerateOptions) => PhysicalRoute | undefined,
   ) { super() }
   override providerInfo(provider: string) { return { id: provider, name: 'Fusion Next' } }
   override async listModels(provider: string): Promise<readonly LlmModelInfo[]> {
@@ -60,7 +60,7 @@ export class FusionCatalogAdapter extends LlmAdapter {
       ...(lead?.reasoning === undefined ? {} : { reasoning: lead.reasoning }) }
   }
   override async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
-    const route = this.resolveLead?.()
+    const route = this.resolveLead?.(options)
     if (!route || !this.dispatch) {
       // Unconfigured Fusion. Never throw synchronously — the session-title
       // pipeline escalates a thrown LlmError into a turn failure. Yield a soft
