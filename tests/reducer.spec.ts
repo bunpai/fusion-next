@@ -125,4 +125,32 @@ describe('task reducer', () => {
     expect(state.phase).toBe('CANCELLED')
     expect(state.acceptedChild).toBe(CHILD)
   })
+
+  it('unwinds a prepared-but-unaccepted order on work-order/cancelled', () => {
+    const prepared = reduceAll([
+      created(),
+      envelope('intent/chosen', 2, { intent: 'DELEGATE' }),
+      envelope('work-order/prepared', 3, { order: order(), reservedChild: CHILD }),
+    ])
+    expect(prepared.currentWorkOrder).toBeTruthy()
+    expect(prepared.reservedChild).toBe(CHILD)
+    const cancelled = reduce(prepared, envelope('work-order/cancelled', 4, {
+      workOrderId: order().id, operationId: order().operationId, reason: 'worker spawn failed' }))
+    expect(cancelled.currentWorkOrder).toBeUndefined()
+    expect(cancelled.reservedChild).toBeUndefined()
+    expect(cancelled.acceptedChild).toBeUndefined()
+    expect(cancelled.phase).toBe('READY')
+  })
+
+  it('ignores work-order/cancelled for a different order id', () => {
+    const prepared = reduceAll([
+      created(),
+      envelope('work-order/prepared', 2, { order: order(), reservedChild: CHILD }),
+      envelope('child/accepted', 3, { operationId: order().operationId, child: CHILD, messageId: 'm1' }),
+    ])
+    const same = reduce(prepared, envelope('work-order/cancelled', 4, {
+      workOrderId: 'some-other-order' as ReturnType<typeof order>['id'], operationId: order().operationId, reason: 'stale' }))
+    expect(same.currentWorkOrder?.id).toBe(order().id)
+    expect(same.acceptedChild).toBe(CHILD)
+  })
 })

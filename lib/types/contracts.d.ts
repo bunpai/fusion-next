@@ -381,6 +381,10 @@ export type FusionEvent = EventEnvelope<'task/created', {
     allowedPaths: readonly string[];
     added: readonly string[];
     reason: string;
+}> | EventEnvelope<'work-order/cancelled', {
+    workOrderId: WorkOrderId;
+    operationId: OperationId;
+    reason: string;
 }> | EventEnvelope<'child/accepted', {
     operationId: OperationId;
     child: SessionId;

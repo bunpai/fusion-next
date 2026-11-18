@@ -372,8 +372,9 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     if (!worker?.model || !lead?.model) { yield* next(); return }
     // A live work order means the Lead is orchestrating (reviews, reworks,
     // settles) — those requests must never leave the planner.
-    const runtimeDoc = store.readDocument(`runtime:${binding?.taskId ?? ''}`)?.value as { currentWorkOrder?: { id?: string } } | undefined
-    if (runtimeDoc?.currentWorkOrder?.id) { yield* next(); return }
+    let liveOrder = false
+    try { liveOrder = !!binding?.taskId && !!store.load(binding.taskId)?.currentWorkOrder } catch { liveOrder = true }
+    if (liveOrder) { yield* next(); return }
     const { text, fresh } = lastRealUserText(request.messages ?? [])
     if (!text) { yield* next(); return }
     const verdictKey = `${request.sessionId}:${text.slice(0, 500)}`

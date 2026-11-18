@@ -76,6 +76,13 @@ export class BindingRepository {
     this.store.writeDocument(`binding:${sessionId}`, prior.revision, binding)
   }
 
+  /** Release the reserved worker identity when a prepared order is cancelled before dispatch. */
+  unassignWorker(sessionId: string, expectedTask: TaskId, workerId: string): void {
+    const prior = this.read(sessionId)
+    if (!prior?.binding.selected || prior.binding.taskId !== expectedTask || prior.binding.workerId !== workerId) return
+    this.store.writeDocument(`binding:${sessionId}`, prior.revision, { ...prior.binding, workerId: undefined })
+  }
+
   /** A new native user turn starts a new task while preserving the frozen pair. */
   rollover(sessionId: string, expectedTask: TaskId, nextTask: TaskId): SessionBinding {
     const prior = this.read(sessionId)

@@ -404,6 +404,7 @@ export type FusionEvent =
   | EventEnvelope<'work-order/prepared', { order: WorkOrder; reservedChild: SessionId; parallel?: true }>
   | EventEnvelope<'work-order/acceptance-amended', { workOrderId: WorkOrderId; acceptance: readonly AcceptanceCriterion[]; reason: string }>
   | EventEnvelope<'work-order/scope-expanded', { workOrderId: WorkOrderId; allowedPaths: readonly string[]; added: readonly string[]; reason: string }>
+  | EventEnvelope<'work-order/cancelled', { workOrderId: WorkOrderId; operationId: OperationId; reason: string }>
   | EventEnvelope<'child/accepted', { operationId: OperationId; child: SessionId; messageId: string }>
   | EventEnvelope<'child/claimed', { operationId: OperationId; child: SessionId }>
   | EventEnvelope<'exploration/recorded', { report: ExplorationReport }>

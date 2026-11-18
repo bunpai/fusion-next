@@ -1651,6 +1651,10 @@ export class FusionCoordinator {
         else if (started) throw new Error('Accepted Worker is absent')
         if (this.effects.pendingFor(binding.taskId, exec).length) throw new Error('Worker dispatch has unfinished native effects')
         this.#release(binding.taskId)
+        // Unwind the prepared order so a retry is not blocked by a stale
+        // currentWorkOrder while wait() reports no handoff (the R10 trap).
+        this.append(binding.taskId, 'work-order/cancelled', { workOrderId: order.id, operationId: order.operationId, reason: String(error) })
+        if (!parallelLane) this.bindings.unassignWorker(agent.id, binding.taskId, childId)
       } catch (stopError) { this.#trackingFailed(agent, `Worker dispatch requires recovery: ${String(stopError)}`) }
       this.append(binding.taskId, 'task/paused', { reason: String(error) })
       throw error

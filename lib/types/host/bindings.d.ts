@@ -24,6 +24,8 @@ export declare class BindingRepository {
     clear(sessionId: string): void;
     /** Reserve identity before native dispatch; an existing selection cannot swap workers. */
     assignWorker(sessionId: string, expectedTask: TaskId, workerId: string): void;
+    /** Release the reserved worker identity when a prepared order is cancelled before dispatch. */
+    unassignWorker(sessionId: string, expectedTask: TaskId, workerId: string): void;
     /** A new native user turn starts a new task while preserving the frozen pair. */
     rollover(sessionId: string, expectedTask: TaskId, nextTask: TaskId): SessionBinding;
     selected(): readonly SessionBinding[];

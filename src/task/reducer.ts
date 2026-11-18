@@ -135,6 +135,23 @@ function applyPayload(state: TaskState | undefined, event: FusionEvent): TaskSta
       }
       return resetReviewForNewSubject({ ...next, currentWorkOrder: { ...order, allowedPaths: event.payload.allowedPaths } })
     }
+    case 'work-order/cancelled': {
+      // Dispatch unwind: a prepared order whose handoff failed is rolled back so
+      // a fresh delegate may replace it. No-op for any other order identity.
+      const next = need(state, event)
+      if (next.parallelOrder?.id === event.payload.workOrderId) {
+        return { ...next, parallelOrder: undefined, parallelChild: undefined, parallelAccepted: false }
+      }
+      if (next.currentWorkOrder?.id !== event.payload.workOrderId) return next
+      return {
+        ...next,
+        currentWorkOrder: undefined,
+        reservedChild: undefined,
+        acceptedChild: undefined,
+        acceptedMessageId: undefined,
+        phase: next.intent === 'DIRECT' ? 'DIRECT' : 'READY',
+      }
+    }
     case 'child/accepted': {
       const accepted = need(state, event)
       if (event.payload.operationId === accepted.parallelOrder?.operationId) {

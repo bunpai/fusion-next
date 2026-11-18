@@ -26,7 +26,7 @@ export declare class FusionCatalogAdapter extends LlmAdapter {
     private readonly leadModelInfo?;
     private readonly dispatch?;
     private readonly resolveLead?;
-    constructor(leadModelInfo?: LeadModelInfo | undefined, dispatch?: FusionDispatch | undefined, resolveLead?: (() => PhysicalRoute | undefined) | undefined);
+    constructor(leadModelInfo?: LeadModelInfo | undefined, dispatch?: FusionDispatch | undefined, resolveLead?: ((options?: GenerateOptions) => PhysicalRoute | undefined) | undefined);
     providerInfo(provider: string): {
         id: string;
         name: string;
