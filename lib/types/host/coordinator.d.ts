@@ -2,7 +2,7 @@ import type { Context } from '@deepseek-ai/cordis';
 import type { Agent } from '@deepseek-ai/dsh-agent';
 import type { GenerateOptions } from '@deepseek-ai/dsh-llm';
 import type { ToolExecution, ToolRunContext } from '@deepseek-ai/dsh-tools';
-import type { FusionEvent, PhysicalRoute, Role, TaskId } from '../contracts.js';
+import type { FusionEvent, PhysicalRoute, Role, TaskId, WorkerReport } from '../contracts.js';
 import { WorkspaceWriteLease } from '../execution/write-lease.js';
 import type { ResolvedProfile } from '../profile/resolve.js';
 import type { SqliteFusionStore } from '../task/sqlite-store.js';
@@ -66,6 +66,13 @@ export interface CoordinatorOptions {
     fileConflicts?(binding: SessionBinding, workspacePath: string): string | undefined;
 }
 /** At least a sentence that is not a stock stub. */
+/**
+ * Slim a WorkerReport for Lead consumption: the Lead only needs enough to make
+ * the review call (status, summary, unresolved, per-check state, verdict
+ * reasons). Envelope fields and artifact-ID arrays are pure token cost —
+ * fusion_next_list_evidence/read_evidence fetch those on demand.
+ */
+export declare function compactReportForLead(report: WorkerReport): Record<string, unknown>;
 export declare function substantiveReview(reason: string): boolean;
 type LooseCheck = {
     command: string;
@@ -81,6 +88,10 @@ type LooseCheck = {
 export declare function normalizeChecks(raw: readonly LooseCheck[]): CheckDefinition[];
 /** Consecutive read-only calls allowed before a model must act; the Lead delegates broad reading. */
 export declare const READ_STREAK: Record<Role, number>;
+/** Separated Leads get a tighter cap: reconnaissance is the Sidekick's job, so the Lead
+ *  hands broad reading to `subagent`/`fusion_next_explore` well before it could finish
+ *  mapping a workspace on its own. */
+export declare const SEPARATED_LEAD_READ_STREAK = 12;
 /** A few lines stay natural for the Lead; anything larger goes to the Sidekick. */
 export declare const LEAD_DIRECT_WRITE: {
     readonly perCall: 30;

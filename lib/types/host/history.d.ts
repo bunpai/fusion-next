@@ -75,4 +75,42 @@ export interface HistoryView {
     savingsPercent: null;
     upstreamHttpCalls: null;
 }
+/** Per-task scorecard (homerail scorecard borrow): one card per task showing the
+ *  pair, per-role token spend, rework rounds and check outcomes — the data a
+ *  planner-vs-executor cost decision actually needs. */
+export interface ScorecardEntry {
+    taskId: string;
+    sessionId: string;
+    title: string;
+    phase: string;
+    verification: string;
+    mode: string;
+    createdAt: string;
+    updatedAt: string;
+    wallMs: number;
+    lead: {
+        provider: string;
+        model: string;
+    } | null;
+    worker: {
+        provider: string;
+        model: string;
+    } | null;
+    leadIn: number;
+    leadOut: number;
+    workerIn: number;
+    workerOut: number;
+    cacheRead: number;
+    reworkRounds: number;
+    submitted: string | null;
+    checks: {
+        total: number;
+        passed: number;
+    };
+}
+export declare function readScorecard(store: SqliteFusionStore, limit?: number): {
+    observedAt: string;
+    totalTasks: number;
+    cards: ScorecardEntry[];
+};
 export declare function readHistory(store: SqliteFusionStore, cursor?: string, limit?: number): HistoryView;

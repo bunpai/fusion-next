@@ -162,6 +162,25 @@ interface RuntimeRecord {
 const STUB_REVIEW = /^(?:placeholder|todo|tbd|n\/?a|none|ok|okay|lgtm|done|accept(?:ed)?|looks good|fine|test)\.?$/i
 
 /** At least a sentence that is not a stock stub. */
+/**
+ * Slim a WorkerReport for Lead consumption: the Lead only needs enough to make
+ * the review call (status, summary, unresolved, per-check state, verdict
+ * reasons). Envelope fields and artifact-ID arrays are pure token cost —
+ * fusion_next_list_evidence/read_evidence fetch those on demand.
+ */
+export function compactReportForLead(report: WorkerReport): Record<string, unknown> {
+  const cap = (text: string, max = 600) => text.length <= max ? text : `${text.slice(0, max)}…`
+  return {
+    status: report.status, summary: cap(report.summary),
+    unresolved: report.unresolved.map(item => cap(item, 400)),
+    ...(report.questions.length ? { questions: report.questions.map(item => cap(item, 400)) } : {}),
+    coverage: report.coverage.map(item => ({
+      check: item.criterionId, state: item.state, why: cap(item.explanation, 300) })),
+    evidenceRefs: report.verification.length,
+    changeManifest: report.changeManifest,
+  }
+}
+
 export function substantiveReview(reason: string): boolean {
   const text = reason.trim()
   return text.length >= 20 && !STUB_REVIEW.test(text)
@@ -184,6 +203,11 @@ export function normalizeChecks(raw: readonly LooseCheck[]): CheckDefinition[] {
 
 /** Consecutive read-only calls allowed before a model must act; the Lead delegates broad reading. */
 export const READ_STREAK: Record<Role, number> = { lead: 25, worker: 60 }
+
+/** Separated Leads get a tighter cap: reconnaissance is the Sidekick's job, so the Lead
+ *  hands broad reading to `subagent`/`fusion_next_explore` well before it could finish
+ *  mapping a workspace on its own. */
+export const SEPARATED_LEAD_READ_STREAK = 12
 
 /** A few lines stay natural for the Lead; anything larger goes to the Sidekick. */
 export const LEAD_DIRECT_WRITE = { perCall: 30, perTask: 80 } as const
@@ -448,8 +472,14 @@ export class FusionCoordinator {
         ? this.onDemand.message(agent, binding, role) : this.taskContext.message(agent, binding, role),
       beforeStep: (agent, binding, role) => {
         if (role !== 'lead') return
-        notices.projectHistory(agent, binding)
         this.#acknowledgeUserRetry(agent, binding.taskId)
+      },
+      // The raw worker transcript stays append-only in the journal during the
+      // turn — the model already sees the projected copy through projectMessage.
+      // Rewriting the surface copy here mid-context used to flush ~45k tokens of
+      // prompt cache at every worker settlement (t3s2 in the multiturn bench).
+      beforeCompaction: (agent, binding, role) => {
+        if (role === 'lead') notices.projectHistory(agent, binding)
       },
       projectMessage: (agent, binding, role, message) => role === 'lead' ? notices.project(agent, binding, message) : message,
       canAccess: (agent, binding, role) => this.#accessBlocked(agent, binding, role),
@@ -1135,7 +1165,7 @@ export class FusionCoordinator {
    * refused past a role-specific bound, so the model must decide with what it has.
    */
   #readStreak(exec: Readonly<ToolExecution>, role: Role, separatedLead = false): string | undefined {
-    const id = exec.agent!.id, limit = READ_STREAK[role]
+    const id = exec.agent!.id, limit = separatedLead ? SEPARATED_LEAD_READ_STREAK : READ_STREAK[role]
     // Recovery paging and waiting on a job are required steps, not browsing: neither counts nor resets.
     if (exec.name === 'fusion_next_read_state' || exec.name === 'job_output') return undefined
     // A separated Lead's shell is Host-confined to read-only, so its shell calls count
@@ -1859,8 +1889,11 @@ export class FusionCoordinator {
       }))
       this.#saveRuntime({ ...runtime, background: false })
       const complete = report.status === 'completed'
-      return JSON.stringify({ status: complete ? 'exploration-ready' : 'exploration-blocked', report, verification: 'unverified',
-        excerpts: report.sources.map(source => ({ ...source, text: Buffer.from(this.store.readArtifact(binding.taskId, source.excerpt.id)).toString('utf8') })),
+      return JSON.stringify({ status: complete ? 'exploration-ready' : 'exploration-blocked', verification: 'unverified',
+        report: { status: report.status, summary: report.summary, unresolved: report.unresolved,
+          sources: report.sources.map(source => ({ path: source.path, lines: `${source.startLine}-${source.endLine}` })) },
+        excerpts: report.sources.map(source => ({ path: source.path, lines: `${source.startLine}-${source.endLine}`,
+          text: Buffer.from(this.store.readArtifact(binding.taskId, source.excerpt.id)).toString('utf8').slice(0, 800) })),
         next: complete
           ? 'Use these source findings to make your own plan, then fusion_next_delegate to this same Worker. For missing facts use fusion_next_rework; for a read-only question use fusion_next_finish_direct. Exploration does not complete implementation.'
           : 'Exploration did not finish. If specific feedback can resolve the blocker, use fusion_next_rework with the same Worker. Otherwise explain the blocker and end this turn to await the missing input. No Worker is still running; fusion_next_wait will not retry it. Do not call fusion_next_finish_direct, fusion_next_review_result or fusion_next_delegate on this incomplete report.' })
@@ -1935,7 +1968,7 @@ export class FusionCoordinator {
     const rewritten = rewrittenTests(this.store, binding.taskId, runtime.root, runtime.changeBase, changes)
     const knownFailures = checked.receipts.flatMap(receipt => receipt.counts?.knownFailures?.length ? [{
       check: runtime.checks.find(check => digestOf(check.plan) === receipt.planDigest)?.definition.id, preExisting: receipt.counts.knownFailures }] : [])
-    return JSON.stringify({ status: 'review-ready', verification: checked.verdict, report: checked.report,
+    return JSON.stringify({ status: 'review-ready', verification: checked.verdict, report: compactReportForLead(checked.report),
       changedPaths: changes, ticketId: ticket.id, automatedChecks: runtime.checks.length,
       ...(requirements.length ? { requirements: requirements.map((item, index) => ({ index: index + 1, text: item.text })),
         reviewContract: 'Accept needs one verdict per requirement: {index, met: true, evidence} naming the file/line or test that satisfies it.' } : {}),

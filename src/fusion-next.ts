@@ -1,5 +1,5 @@
 import { bi } from './bilingual.js'
-import { backfillHistory, readHistory, type UsageSummary } from './host/history.js'
+import { backfillHistory, readHistory, readScorecard, type UsageSummary } from './host/history.js'
 import { homedir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
@@ -326,6 +326,8 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
       const url = new URL(req.url ?? '/', 'http://localhost')
       if (req.method === 'GET') {
         if (url.searchParams.get('view') === 'history') return json(res, 200, readHistory(store, url.searchParams.get('cursor') ?? ''))
+        if (url.searchParams.get('view') === 'scorecard') return json(res, 200, readScorecard(store,
+          Number(url.searchParams.get('limit') ?? '50')))
         if (url.searchParams.get('view') === 'activity') return json(res, 200, await readHistoricalFusionActivity(ctx, store,
           url.searchParams.get('sessionId') ?? '', url.searchParams.get('callId') ?? '', Number(url.searchParams.get('after') ?? -1)))
         if (url.searchParams.get('view') === 'status') {

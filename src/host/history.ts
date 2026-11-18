@@ -55,6 +55,54 @@ export interface HistoryView {
   totals: HistoryTotals; groups: ({ role: string; provider: string; model: string; purpose: string } & HistoryTotals)[]
   actualBilledUsd: null; savingsPercent: null; upstreamHttpCalls: null
 }
+/** Per-task scorecard (homerail scorecard borrow): one card per task showing the
+ *  pair, per-role token spend, rework rounds and check outcomes — the data a
+ *  planner-vs-executor cost decision actually needs. */
+export interface ScorecardEntry {
+  taskId: string; sessionId: string; title: string; phase: string; verification: string; mode: string
+  createdAt: string; updatedAt: string; wallMs: number
+  lead: { provider: string; model: string } | null; worker: { provider: string; model: string } | null
+  leadIn: number; leadOut: number; workerIn: number; workerOut: number; cacheRead: number
+  reworkRounds: number; submitted: string | null; checks: { total: number; passed: number }
+}
+export function readScorecard(store: SqliteFusionStore, limit = 50): { observedAt: string; totalTasks: number; cards: ScorecardEntry[] } {
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 200) throw new Error('Scorecard limit must be 1–200')
+  const tasks = store.listDocumentIds('task-index:').map(id => store.readDocument(id)!.value as TaskSummary)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id)).slice(0, limit)
+  const usage = new Map<string, { leadIn: number; leadOut: number; workerIn: number; workerOut: number; cacheRead: number }>()
+  for (const id of store.listDocumentIds('usage-index:')) {
+    const row = store.readDocument(id)!.value as UsageSummary
+    const u = usage.get(row.taskId) ?? { leadIn: 0, leadOut: 0, workerIn: 0, workerOut: 0, cacheRead: 0 }
+    const tok = (c: { state: string; tokens?: number } | undefined) => c?.state === 'known' ? c.tokens ?? 0 : 0
+    const role = row.role === 'worker' ? 'worker' : 'lead'
+    u[`${role}In` as 'leadIn' | 'workerIn'] += tok(row.input)
+    u[`${role}Out` as 'leadOut' | 'workerOut'] += tok(row.output)
+    u.cacheRead += tok(row.cacheRead)
+    usage.set(row.taskId, u)
+  }
+  const cards = tasks.map(task => {
+    const binding = store.readDocument(`binding:${task.sessionId}`)?.value as
+      { profile?: { lead?: { provider: string; model: string }; worker?: { provider: string; model: string } } } | undefined
+    const runtime = store.readDocument(`runtime:${task.id}`)?.value as
+      { reworkRounds?: number; submitted?: { status?: string }; checks?: readonly unknown[] } | undefined
+    let passed = 0
+    const checkIds = store.listDocumentIds(`check-invocation:${task.id}:`)
+    for (const id of checkIds) {
+      const inv = store.readDocument(id)!.value as { evidence?: { state?: string; exitCode?: number | null } }
+      if (inv.evidence?.state === 'completed' && inv.evidence.exitCode === 0) passed++
+    }
+    const u = usage.get(task.id) ?? { leadIn: 0, leadOut: 0, workerIn: 0, workerOut: 0, cacheRead: 0 }
+    const route = (r?: { provider: string; model: string }) => r ? { provider: r.provider, model: r.model } : null
+    return { taskId: task.id, sessionId: task.sessionId, title: task.title, phase: task.phase,
+      verification: task.verification, mode: task.mode, createdAt: task.createdAt, updatedAt: task.updatedAt,
+      wallMs: Math.max(0, Date.parse(task.updatedAt) - Date.parse(task.createdAt)),
+      lead: route(binding?.profile?.lead), worker: route(binding?.profile?.worker), ...u,
+      reworkRounds: runtime?.reworkRounds ?? 0, submitted: runtime?.submitted?.status ?? null,
+      checks: { total: (runtime?.checks ?? []).length || checkIds.length, passed } }
+  })
+  return { observedAt: new Date().toISOString(), totalTasks: store.listDocumentIds('task-index:').length, cards }
+}
+
 export function readHistory(store: SqliteFusionStore, cursor = '', limit = 20): HistoryView {
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50) throw new Error('History page size must be 1–50')
   const tasks = store.listDocumentIds('task-index:').map(id => store.readDocument(id)!.value as TaskSummary)

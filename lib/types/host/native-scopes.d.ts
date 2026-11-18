@@ -9,6 +9,13 @@ export interface FusionScopeCallbacks {
     beforeTurn?(agent: Agent, binding: SessionBinding, role: Role, turn: number): SessionBinding;
     taskContext?(agent: Agent, binding: SessionBinding, role: Role): UserMessage | undefined;
     beforeStep?(agent: Agent, binding: SessionBinding, role: Role): void;
+    /**
+     * Fires on the session's `compaction/start` event — the last moment to
+     * rewrite surface history before the compactor reads it. Use this for
+     * in-place replacements only: running them per-step would poison the
+     * frontier model's prompt cache (every byte after the edit re-encodes).
+     */
+    beforeCompaction?(agent: Agent, binding: SessionBinding, role: Role): void;
     projectMessage?(agent: Agent, binding: SessionBinding, role: Role, message: UserMessage): UserMessage;
     /** All independent pause, budget, recovery and unknown-effect gates are checked here. */
     canAccess?(agent: Agent, binding: SessionBinding, role: Role): string | undefined;
