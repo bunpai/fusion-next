@@ -9,7 +9,7 @@ Requires **DeepSeek Harness ≥ 0.2.0-rc.2** (verified on DSH NEXT 0.2.2-rc.1).
 Click **Plugins** in the left sidebar → **Add plugin**, and enter in "Package name or address":
 
 ```text
-https://github.com/bunpai/fusion-next/releases/download/v0.1.1/fusion-next-0.1.1.tgz
+github:bunpai/fusion-next
 ```
 
 The release ships the built `lib/`; no clone or build is needed. Then quit and reopen DSH Studio (plugins take effect at the next start).
@@ -17,7 +17,7 @@ The release ships the built `lib/`; no clone or build is needed. Then quit and r
 ## Web CLI
 
 ```sh
-dsh plugin --profile web add https://github.com/bunpai/fusion-next/releases/download/v0.1.1/fusion-next-0.1.1.tgz
+dsh plugin --profile web add github:bunpai/fusion-next
 ```
 
 ## From source

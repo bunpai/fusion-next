@@ -28,6 +28,11 @@ export interface CoordinatorOwner {
     readonly binding: SessionBinding;
     readonly role: Role;
 }
+/**
+ * M2.5 lead-lane write boundary as a pure predicate (unit-testable penetration
+ * matrix). Returns the bilingual denial or undefined when the tool is allowed.
+ */
+export declare function leadLaneDeny(toolName: string): string | undefined;
 export declare class FusionCoordinator {
     #private;
     private readonly ctx;
@@ -43,6 +48,10 @@ export declare class FusionCoordinator {
     constructor(ctx: Context, store: SqliteFusionStore, options: CoordinatorOptions);
     owner(agent: Agent): CoordinatorOwner | undefined;
     selectBeforeAssembly(agent: Agent, resolved: ResolvedProfile): void;
+    /** Resumed sessions keep the binding but lose the per-process scope — the
+     * guard and fusion_dispatch die with the prior process (v0.3.1 bug: a resumed
+     * Lead ran naked and wrote the workspace directly). Reinstall lazily. */
+    ensureLeadScope(agent: Agent): void;
     select(agent: Agent, resolved: ResolvedProfile): Promise<void>;
     clear(agent: Agent, options?: {
         abandon?: boolean;

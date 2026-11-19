@@ -1,4 +1,11 @@
-import type { FusionEvent, OutboxRow, ReportSubject, ReviewReadinessReceipt, ReviewTicket, TaskId, WorkerReport } from '../contracts.js';
+import type { 
+/**
+ * @deprecated Accidental export — remnant of the removed v0.2 review-ticket ceremony.
+ * Replaced-by: the fusion_dispatch AuditBundle pipeline (src/host/dispatch-v3.ts + src/host/audit-v3.ts).
+ * Planned removal: next major version. Migrate by reading audit results off the dispatch bundle
+ * or the runtime:<taskId> document instead of this module.
+ */
+FusionEvent, OutboxRow, ReportSubject, ReviewReadinessReceipt, ReviewTicket, TaskId, WorkerReport } from '../contracts.js';
 import type { ReviewClassification } from './protocol.js';
 import type { TaskState } from '../task/state.js';
 export declare function reportSubject(taskId: TaskId, report: WorkerReport): ReportSubject;

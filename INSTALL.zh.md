@@ -9,7 +9,7 @@
 在左侧栏点 **插件** → **添加插件**，在「包名或地址」里输入：
 
 ```text
-https://github.com/bunpai/fusion-next/releases/download/v0.1.1/fusion-next-0.1.1.tgz
+github:bunpai/fusion-next
 ```
 
 发布包已含构建产物 `lib/`，无需克隆或编译。装完退出并重新打开 DSH Studio（插件在下次启动时生效）。
@@ -17,7 +17,7 @@ https://github.com/bunpai/fusion-next/releases/download/v0.1.1/fusion-next-0.1.1
 ## Web CLI
 
 ```sh
-dsh plugin --profile web add https://github.com/bunpai/fusion-next/releases/download/v0.1.1/fusion-next-0.1.1.tgz
+dsh plugin --profile web add github:bunpai/fusion-next
 ```
 
 ## 源码安装

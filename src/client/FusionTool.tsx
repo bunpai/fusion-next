@@ -5,15 +5,13 @@ import { activityRows } from './activity-model.js'
 import { tr, useLang } from './i18n.js'
 import { ActivityCard, activityStyles } from './ActivityRows.js'
 
-export const fusionControlTools = ['fusion_dispatch',
-  'fusion_next_read_state', 'fusion_next_delegate_text', 'fusion_next_explore', 'fusion_next_delegate', 'fusion_next_rework', 'fusion_next_wait', 'fusion_next_review_result',
-  'fusion_next_submit_result', 'fusion_next_takeover', 'fusion_next_finish_direct', 'fusion_next_read_evidence'] as const
+export const fusionControlTools = ['fusion_dispatch'] as const
 
 /** Keep internal coordination out of the normal conversation. Errors remain visible. */
 export function FusionTool({ block, sessionId, callId, toolName, cwd, openFile }: ToolCallViewProps) {
   const lang = useLang()
   const settled = 'kind' in block
-  const tracksActivity = toolName === 'fusion_dispatch' || toolName === 'fusion_next_delegate_text' || toolName === 'fusion_next_explore' || toolName === 'fusion_next_delegate' || toolName === 'fusion_next_rework'
+  const tracksActivity = toolName === 'fusion_dispatch'
   const [snapshot, setSnapshot] = useState<{ key: string; events: FusionActivity[]; done: boolean; failed?: boolean }>()
   const key = `${sessionId}:${callId}`
   useEffect(() => {

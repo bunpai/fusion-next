@@ -13,21 +13,22 @@ This project is an independent rewrite of [dsh-model-fusion](https://github.com/
 ## Install
 
 ```sh
-dsh plugin add https://github.com/bunpai/fusion-next/releases/download/v0.1.1/fusion-next-0.1.1.tgz
+dsh plugin add github:bunpai/fusion-next
 ```
 
-or from source: `github:bunpai/fusion-next`. Requires `dsh >= 0.2.0-rc.2` (verified on DSH NEXT 0.2.2-rc.1).
+or grab the latest tarball from the releases page. Requires `dsh >= 0.2.0-rc.2` (verified on DSH NEXT 0.2.2-rc.1).
 
 After installing, pick **Executor → any model** next to the model selector in any session.
 
-## How it works
+## How it works (v0.3.x · plan-once)
 
-1. **Delegate** — the Lead hands a work order (brief + acceptance commands) to the Sidekick via `fusion_next_delegate`. The Sidekick runs as an independent sub-agent session with its own model route and tool surface.
-2. **Verify** — acceptance commands you or the Lead define (compile, tests, output checks) actually run; "looks right" is not acceptance.
-3. **Review** — the Lead accepts or sends the work back with concrete notes via `fusion_next_review_result`; reworks loop back to the Sidekick.
-4. **Boundaries** — while a task executes the Lead holds read access; the Sidekick writes inside the workspace. File ownership and overreach are constrained by the plugin's generation/authority ledger, not by politeness.
+1. **Plan once** — the Lead reads the requirement and produces one plan: goal, invariants, acceptance criteria, verify commands. From then on it only schedules and gives final review.
+2. **One dispatch** — the Lead calls `fusion_dispatch` (the single fusion tool) with an execution instruction plus optional `verify_commands`. The Worker is a persistent sub-agent session running the executor model with the full write tool surface.
+3. **Unattended pipeline** — inside one dispatch the plugin runs, without interruption: worker executes → workspace snapshot audit → verify commands → automatic rework (≤2 rounds). The Lead gets back one AuditBundle: changed files, unified diff, static audits (mutated test files / deleted test lines / missing required files), per-command results, repair rounds.
+4. **Budgeted escalation** — execution failures consume a 3-strike rework budget per task; identical resends are rejected outright; infra errors (429/timeouts) have a separate retry budget. A stuck worker is bounded by the watchdog (wall/step limit → interrupt → quiescence check → full audit into a stalled bundle; still churning → quarantined).
+5. **Hard boundary** — in pair mode the Lead's tool surface is read-only + control-plane: writes must go through dispatch; the deny is enforced, not suggested. In model-menu mode, turns forwarded wholesale to the executor are audited after the fact by a tripwire — deleted test lines or missing required files force the next turn back to the planner.
 
-Verified end-to-end under the `standard`, `cordis` (creation) and `ptc` agent presets; Lead and Sidekick may come from different providers.
+Verified end-to-end under the `standard`, `cordis` (creation) and `ptc` agent presets; Lead and Worker may come from different providers.
 
 ## UI
 
@@ -39,7 +40,7 @@ Verified end-to-end under the `standard`, `cordis` (creation) and `ptc` agent pr
 
 ## Benchmark (22 tasks × 2 seeds × 5 executors)
 
-On an isolated instance (DSH NEXT 0.2.2-rc.1, PTC preset, Lead fixed to devin/swe-2): 22 tasks (12 generic + 10 against a real QT C++ machine codebase) × each executor × 2 seeds. Fusion arms: 95–100% success; solo arms: 81–100%; combined Lead+Sidekick token cost ≈ 1/8 of a solo swe-2 arm at public API prices. Full data: [benchmark/baselines/executor-benchmark-20261114.report.md](benchmark/baselines/executor-benchmark-20261114.report.md).
+On an isolated instance (DSH NEXT 0.2.2-rc.1, PTC preset, Lead fixed to devin/swe-2): 22 tasks (12 generic + 10 against a real QT C++ machine codebase) × each executor × 2 seeds. Fusion arms: 95–100% success; solo arms: 81–100%; combined Lead+Sidekick token cost ≈ 1/8 of a solo swe-2 arm at public API prices. Full data: [benchmark/baselines/report.md](benchmark/baselines/report.md).
 
 ## Where data lives
 
@@ -53,7 +54,8 @@ On an isolated instance (DSH NEXT 0.2.2-rc.1, PTC preset, Lead fixed to devin/sw
 corepack pnpm@9.15.9 install --frozen-lockfile
 node scripts/link-host.mjs /path/to/deepseek-harness      # link a DSH checkout for development
 DSHX_HARNESS=/path/to/deepseek-harness pnpm build
-pnpm test          # 86 files / 638 tests
+pnpm test          # 30 files / 154 tests
+node scripts/build-local.mjs   # local build without a harness checkout
 ```
 
 The plugin uses only DSH's public plugin APIs and never patches DSH source. How new DSH versions are adopted: [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md).

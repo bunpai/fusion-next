@@ -45,8 +45,31 @@ interface ChildRow { parent?: string; taskId?: string; lane?: string }
 
 const READ_TOOLS = new Set(['read', 'grep', 'glob', 'tgrep', 'read_image', 'job_output'])
 const EXPLORE_LANE_TOOLS = ['read', 'grep', 'glob', 'tgrep', 'read_image']
-const READ_STREAK_SOFT_CAP = 8
-const DIRECT_WRITE_SOFT_CAP = 40
+// M2.5 — in pair mode the Lead holds NO workspace-write/execute capability; every
+// mutation reaches the workspace through fusion_dispatch. Analysis, delegation,
+// presentation, and control-plane tools stay. run_code stays (outer channel) —
+// its inner write/execute primitives hit the same guard and are denied there.
+const LEAD_LANE_TOOLS = new Set([
+  'read', 'grep', 'glob', 'tgrep', 'read_image',
+  'web_fetch', 'web_search',
+  'subagent', 'run_code', 'fusion_dispatch',
+  'job_list', 'job_output', 'job_kill',
+  'list_agents', 'send_message', 'interrupt_agent', 'wait_agent',
+  'todo_write', 'create_goal', 'get_goal', 'update_goal',
+  'skill', 'workflow', 'exit_plan_mode', 'ask_user_question',
+  'compress', 'decompress', 'search_context', 'acp_status', 'acp_cache',
+])
+
+/**
+ * M2.5 lead-lane write boundary as a pure predicate (unit-testable penetration
+ * matrix). Returns the bilingual denial or undefined when the tool is allowed.
+ */
+export function leadLaneDeny(toolName: string): string | undefined {
+  if (LEAD_LANE_TOOLS.has(toolName)) return undefined
+  return bi(
+    'Lead 没有工作区写/执行权限 — 一切变更经由 fusion_dispatch 交给执行模型（' + toolName + ' 被拒）。',
+    'The Lead holds no workspace write/execute capability — every change goes through fusion_dispatch to the executor (' + toolName + ' denied).')
+}
 
 const textOutput = {
   schema: { type: 'string' as const },
@@ -54,21 +77,6 @@ const textOutput = {
 }
 
 const linesOf = (text: string): number => text.split('\n').length
-
-/** Heuristic: lines a single tool call writes directly (heredoc/redirect aware). */
-const directWriteLines = (name: string, args: unknown): number => {
-  const value = (args ?? {}) as Record<string, unknown>
-  switch (name) {
-    case 'write': return typeof value.content === 'string' ? linesOf(value.content) : 0
-    case 'edit': return typeof value.new_string === 'string' ? linesOf(value.new_string) : 0
-    case 'run_code': return typeof value.code === 'string' ? linesOf(value.code) : 0
-    case 'bash': case 'pwsh': {
-      const command = value.command
-      return typeof command === 'string' && /(<<|>)/.test(command) ? linesOf(command) : 0
-    }
-    default: return 0
-  }
-}
 
 export class FusionCoordinator {
   readonly transport: NativeWorkerTransport
@@ -79,8 +87,6 @@ export class FusionCoordinator {
   readonly effects: NativeEffects
   readonly keepalive: NativeCacheKeepalive
   readonly #dispose: (() => void)[] = []
-  readonly #readStreak = new Map<string, number>()
-  readonly #streakWarned = new Set<string>()
   #closed = false
 
   constructor(
@@ -97,7 +103,7 @@ export class FusionCoordinator {
       beforeRequest: () => {},
       canAccess: (_agent, binding) => this.#denyPaused(binding.taskId),
       canRequest: (_agent, binding) => this.#denyPaused(binding.taskId),
-      canExecute: () => undefined,
+      canExecute: (exec, _binding, role) => this.#canExecute(exec, role),
       modelLimits: (provider, model) => resolveModelOutputLimits(ctx, provider, model),
       readOnlyTools: (agent, _binding, role) => this.#readOnlyTools(agent, role),
       installTools: (scope, agent, binding, role) => this.#installTools(scope, agent, binding, role),
@@ -158,6 +164,17 @@ export class FusionCoordinator {
     this.scopes.install(agent, row.binding, 'worker')
   }
 
+  /**
+   * M2.5 — fail-closed write boundary for the pair-mode Lead. Any tool outside
+   * LEAD_LANE_TOOLS is denied: writes/edits/bash/mutating effects all route
+   * through fusion_dispatch. Inner calls from run_code traverse this same guard,
+   * so PTC cannot smuggle writes either.
+   */
+  #canExecute(exec: Readonly<ToolExecution>, role: Role): string | undefined {
+    if (role !== 'lead') return undefined
+    return leadLaneDeny(exec.name)
+  }
+
   /** Explore-lane children are fenced read-only; worker lane keeps the host sandbox. */
   #readOnlyTools(agent: Agent, role: Role): readonly string[] | undefined {
     if (role !== 'worker') return undefined
@@ -180,7 +197,8 @@ export class FusionCoordinator {
 
   selectBeforeAssembly(agent: Agent, resolved: ResolvedProfile): void {
     if (agent.session.header.parentSession) return
-    if (this.bindings.read(agent.id)?.binding.selected) return
+    const row = this.bindings.read(agent.id)
+    if (row?.binding.selected) { this.ensureLeadScope(agent); return }
     const taskId = TaskId('fusion-task-' + randomUUID())
     this.store.create({
       schemaVersion: 1, id: randomUUID(), taskId, seq: 1, revision: 1,
@@ -190,6 +208,14 @@ export class FusionCoordinator {
     const binding = this.bindings.select(agent.id, taskId, resolved)
     createRuntime(this.store, taskId)
     this.scopes.install(agent, binding, 'lead')
+  }
+
+  /** Resumed sessions keep the binding but lose the per-process scope — the
+   * guard and fusion_dispatch die with the prior process (v0.3.1 bug: a resumed
+   * Lead ran naked and wrote the workspace directly). Reinstall lazily. */
+  ensureLeadScope(agent: Agent): void {
+    const row = this.bindings.read(agent.id)
+    if (row?.binding.selected && !this.scopes.get(agent)) this.scopes.install(agent, row.binding, 'lead')
   }
 
   async select(agent: Agent, resolved: ResolvedProfile): Promise<void> {
@@ -275,7 +301,10 @@ export class FusionCoordinator {
       ].join(' '),
       parameters: {
         instruction: { type: 'string', description: 'Complete implementation instruction for the executor. Required to start new work.' },
-        verify_commands: { type: 'array', items: { type: 'string' }, description: 'Shell commands run in the workspace root after the worker finishes (e.g. a build or focused test). Max 6, 120s each.' },
+        verify_commands: { type: 'array', items: { type: 'string' }, description: 'Test-runner commands run in the workspace root after the worker finishes (pytest/vitest/jest/go/cargo/make/npm/pnpm/node/tsx/python…). Max 6. OMIT for prose/documentation tasks — inline code (node -e, python -c) is rejected.' },
+        verify_timeout_ms: { type: 'number', description: 'Per-command verify timeout in ms. Clamped to [120000, 3600000]; defaults to 120000.' },
+        max_wall_ms: { type: 'number', description: 'Watchdog: max wall time for this dispatch in ms (default 600000). On breach the worker is interrupted and you get a stalled bundle with full audit.' },
+        max_steps: { type: 'number', description: 'Watchdog: max worker steps this dispatch may consume (default 60). On breach the worker is interrupted and you get a stalled bundle with full audit.' },
         reset_worker: { type: 'boolean', description: 'Stop and discard the current worker first (fresh context, new child session).' },
       },
       output: textOutput,
@@ -289,38 +318,9 @@ export class FusionCoordinator {
         return JSON.stringify(bundle, null, 2)
       },
     })))
-    // Soft post-execute reminders — advisory text appended to results, never a denial.
-    dispose.push(scope.on('tools/post-execute', async (exec, result, next) => {
-      const note = this.#softNote(exec)
-      if (!note || !result || result.isError || !Array.isArray(result.content)) return next()
-      return { kind: 'accept' as const, content: [...result.content, { type: 'text' as const, text: note }] }
-    }))
     return dispose
   }
 
-  #softNote(exec: ToolExecution): string | undefined {
-    const agent = exec.agent
-    if (!agent) return undefined
-    if (!READ_TOOLS.has(exec.name)) {
-      this.#readStreak.delete(agent.id)
-      const lines = directWriteLines(exec.name, exec.arguments)
-      if (lines > DIRECT_WRITE_SOFT_CAP) {
-        return bi(
-          '[fusion-next] 本次直接写入约 ' + lines + ' 行 — 实现性改动请交给 fusion_dispatch（执行模型完成编辑+验证，你只收审计包）；小的修正性编辑直接写没问题。',
-          '[fusion-next] ~' + lines + ' lines written directly — implementation work belongs to fusion_dispatch (executor edits+verifies, you review the audit bundle); small corrective edits are fine.')
-      }
-      return undefined
-    }
-    const streak = (this.#readStreak.get(agent.id) ?? 0) + 1
-    this.#readStreak.set(agent.id, streak)
-    if (streak === READ_STREAK_SOFT_CAP && !this.#streakWarned.has(agent.id)) {
-      this.#streakWarned.add(agent.id)
-      return bi(
-        '[fusion-next] 已连续 ' + streak + ' 次读取 — 大范围检索/阅读请改用 subagent：默认改派到执行模型，只读探索，不占用你的上下文。',
-        '[fusion-next] ' + streak + ' consecutive reads — delegate bulk exploration to `subagent`: it is rerouted to the executor, read-only fenced, and keeps your context light.')
-    }
-    return undefined
-  }
 
   // ---- subagent → executor explore lane --------------------------------
 

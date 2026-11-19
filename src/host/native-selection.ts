@@ -257,6 +257,9 @@ export function installNativeFusionSelection(ctx: Context, input: {
         if (!input.coordinator()) await input.ensureCoordinator?.(agent.session.id, route, worker)
         change(agent)
       }
+      // Reinstall the per-process lead scope when a resumed session still
+      // owns a binding (guard + fusion_dispatch died with the prior process).
+      if (selected(agent)) input.coordinator()?.ensureLeadScope?.(agent)
       return config
     }, { prepend: true }),
   ]

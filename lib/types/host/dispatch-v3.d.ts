@@ -17,6 +17,12 @@ export interface DispatchArgs {
     readonly instruction?: string;
     readonly verify_commands?: readonly string[];
     readonly reset_worker?: boolean;
+    /** Per-command verify timeout in ms; clamped to [120s, 3600s]. */
+    readonly verify_timeout_ms?: number;
+    /** M2.3 watchdog: max wall time for the whole dispatch (default 600_000). */
+    readonly max_wall_ms?: number;
+    /** M2.3 watchdog: max worker steps this dispatch may consume (default 60). */
+    readonly max_steps?: number;
 }
 export interface DispatchDeps {
     readonly ctx: Context;
@@ -25,6 +31,10 @@ export interface DispatchDeps {
     readonly activity: NativeFusionActivity;
     readonly workerTools: readonly string[];
 }
+/** M2.3 three-way attribution: files already modified vs HEAD when the dispatch
+ * begins are the USER's pending edits — worker deltas on top of them must be
+ * diffed against this captured content, not against HEAD. */
+export declare function captureUserBaseline(root: string): Map<string, string> | undefined;
 export declare function runDispatch(deps: DispatchDeps, agent: Agent, binding: SessionBinding, args: DispatchArgs, signal: AbortSignal, callId?: string): Promise<AuditBundle>;
 /** Live-dispatch check for the prefix router: worker work in flight keeps the Lead streaming. */
 export declare function dispatchInFlight(store: SqliteFusionStore, taskId: import('../contracts.js').TaskId): boolean;

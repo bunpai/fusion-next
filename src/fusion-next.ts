@@ -6,7 +6,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { GenerateOptions, LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm'
-import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import { MessageId, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-api-session-controller'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-commands'
@@ -27,6 +27,7 @@ import { readFusionStatus, readFusionStatusAsync } from './host/status.js'
 import { readHistoricalFusionActivity } from './host/native-activity.js'
 import { readSessionPair, writeSessionPair, syncSessionPairLead } from './host/session-pair.js'
 import { dispatchInFlight } from './host/dispatch-v3.js'
+import { createCatalogTripwire } from './host/tripwire.js'
 
 export * from './index.js'
 
@@ -144,12 +145,30 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   // Lead's physical adapter. The token meter observes both the fusion call and
   // the physical call (accounting duplicate until the dedicated Fusion LLM
   // layer replaces this delegation).
-  const fusionDispatch: FusionDispatch = (options: GenerateOptions, route: PhysicalRoute): AsyncIterable<StreamChunk> => ctx.llm.stream({
-    ...options,
-    provider: route.provider,
-    model: route.model,
-    ...(route.reasoningEffort === undefined ? {} : { reasoningEffort: ReasoningEffortId(route.reasoningEffort) }),
-  })
+  // M5 (C2 tripwire): the catalog channel forwards read-class turns to the
+  // worker with no lead-lane write gate — the un-audited-write hole confirmed
+  // in M0. Latch a snapshot on forward, audit on idle, escalate on breach.
+  const tripwire = createCatalogTripwire()
+  const tripwireEnabled = (): boolean => {
+    try { return (store.readDocument('settings:routing')?.value as { tripwire?: unknown } | undefined)?.tripwire !== false } catch { return true }
+  }
+  const fusionDispatch: FusionDispatch = (options: GenerateOptions, route: PhysicalRoute): AsyncIterable<StreamChunk> => {
+    // A tripwire notice rides the escalated (lead-routed) turn: appended as a
+    // trailing system message so the planner sees the audit beside the request.
+    const notice = options.sessionId ? tripwire.takeNotice(String(options.sessionId)) : undefined
+    return ctx.llm.stream({
+      ...options,
+      provider: route.provider,
+      model: route.model,
+      ...(route.reasoningEffort === undefined ? {} : { reasoningEffort: ReasoningEffortId(route.reasoningEffort) }),
+      ...(notice === undefined ? {} : {
+        messages: [
+          ...(options.messages ?? []),
+          { role: 'system' as const, id: MessageId('fusion-tripwire-' + Date.now()), source: { kind: 'system-prompt' as const }, content: [{ type: 'text' as const, text: notice }] },
+        ],
+      }),
+    })
+  }
   // resolveLead: the configured global default, then the settings document,
   // then any selected session binding — a fresh install pairs per session
   // before a default profile exists, and the virtual selection still streams.
@@ -198,27 +217,63 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     const lead = resolveFusionLead()
     if (!options || options.purpose || !options.sessionId) return lead
     try {
+      // A pending tripwire escalation wins over classification: the last
+      // forwarded turn breached the audit, so the planner reviews it first.
+      if (tripwire.escalate(String(options.sessionId))) return lead
       const binding = bindings.read(String(options.sessionId))?.binding
       const worker = binding?.selected ? binding.profile.worker : undefined
       if (!worker?.model) return lead
-      return classifyUserText(lastRealUserText(options.messages ?? []).text) === 'worker' ? worker : lead
+      const text = lastRealUserText(options.messages ?? []).text
+      if (classifyUserText(text) === 'worker') {
+        // Latch the pre-turn snapshot so the idle-time audit can attribute
+        // every write this forwarded turn made (M5 C2, catalog channel only).
+        if (tripwireEnabled()) {
+          const root = ctx.agents.get(SessionId(String(options.sessionId)))?.session.header.cwd
+          if (root) tripwire.latch(String(options.sessionId), root, text)
+        }
+        return worker
+      }
+      return lead
     } catch { return lead }
   }
   ctx.effect(() => ctx.llm.registerAdapter([FUSION_NEXT_PROVIDER], new FusionCatalogAdapter(leadModelInfo, fusionDispatch, resolveFusionRoute)))
+  // Turn-end settle for the catalog tripwire: the audit is deterministic and
+  // cheap (hash diff), and only a breach queues a lead-side escalation notice.
+  ctx.effect(() => ctx.on('agent/status', ({ agent, status }) => {
+    if (status !== 'idle' || agent.session.header.parentSession) return
+    void tripwire.settle(agent.session.id)
+  }))
+  ctx.effect(() => ctx.on('agent/disposed', ({ agent }) => { tripwire.clear(agent.session.id) }))
   // Prefix routing on the physical path: pair sessions stream straight through
   // their physical adapter, so the llm/stream waterfall is the only seam that
   // sees every request. A clearly simple newest-user turn reroutes to the
   // paired executor — its sandbox/gates stay the Lead's, the planner never runs.
   const rerouted = new WeakSet<GenerateOptions>()
   const routeVerdicts = new Map<string, 'worker' | 'lead'>()
+  const writeTurns = new Map<string, number>()
+  const upgradeNoticed = new Set<string>()
+  // M1 (B-arm probe): settings:routing doc { aggressiveWrite: true } switches the
+  // judge to an aggressive variant that lets small in-workspace writes count as
+  // SIMPLE. Default false — production classification is unchanged.
+  const aggressiveWrite = (): boolean => {
+    try { return Boolean((store.readDocument('settings:routing')?.value as { aggressiveWrite?: unknown } | undefined)?.aggressiveWrite) } catch { return false }
+  }
   const judgeWithPlanner = async (route: PhysicalRoute, text: string): Promise<'worker' | 'lead'> => {
-    const prompt = [
-      'Decide whether the newest user request can be fully handled by a cheaper junior executor.',
-      'SIMPLE = read-only investigation or a short factual answer (reading, searching, explaining, comparing, counting, summarising) with no file changes needed.',
-      'COMPLEX = anything that writes, executes, fixes, builds, or needs careful multi-step judgement.',
-      'Answer with exactly one word: SIMPLE or COMPLEX. Request:',
-      text.length > 4000 ? text.slice(0, 2000) + '\n…\n' + text.slice(-2000) : text,
-    ].join('\n')
+    const prompt = aggressiveWrite()
+      ? [
+          'Decide whether the newest user request can be fully handled by a cheaper junior executor.',
+          'SIMPLE = read-only investigation, a short factual answer, OR a concrete in-workspace change the executor can finish alone — creating or editing files, running builds/tests, applying a clearly described fix — expected to touch at most a few files.',
+          'COMPLEX = anything ambiguous, wide-blast-radius, destructive, or needing careful multi-step judgement and coordination.',
+          'Answer with exactly one word: SIMPLE or COMPLEX. Request:',
+          text.length > 4000 ? text.slice(0, 2000) + '\n…\n' + text.slice(-2000) : text,
+        ].join('\n')
+      : [
+          'Decide whether the newest user request can be fully handled by a cheaper junior executor.',
+          'SIMPLE = read-only investigation or a short factual answer (reading, searching, explaining, comparing, counting, summarising) with no file changes needed.',
+          'COMPLEX = anything that writes, executes, fixes, builds, or needs careful multi-step judgement.',
+          'Answer with exactly one word: SIMPLE or COMPLEX. Request:',
+          text.length > 4000 ? text.slice(0, 2000) + '\n…\n' + text.slice(-2000) : text,
+        ].join('\n')
     try {
       const judge: GenerateOptions = {
         provider: route.provider, model: route.model, maxTokens: 8,
@@ -250,6 +305,31 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     let verdict = routeVerdicts.get(verdictKey)
     if (!verdict) {
       if (!fresh) { yield* next(); return }
+      // M3: write intent goes to the Lead directly — no per-turn judge tax on
+      // writes. Only read-class and short text reach the judge (SIMPLE→worker),
+      // unless the M1 aggressiveWrite probe is on.
+      const cls = classifyUserText(text)
+      const sid = String(request.sessionId)
+      if (cls === 'lead' && !aggressiveWrite()) {
+        const turns = (writeTurns.get(sid) ?? 0) + 1
+        writeTurns.set(sid, turns)
+        if (turns >= 2 && !upgradeNoticed.has(sid)) {
+          upgradeNoticed.add(sid)
+          const notice: GenerateOptions = {
+            ...request,
+            messages: [
+              ...(request.messages ?? []).slice(0, -1),
+              { role: 'system' as const, id: MessageId(`fusion-upgrade-${Date.now()}`), source: { kind: 'system-prompt' as const }, content: [{ type: 'text' as const, text: '[fusion-next] This task looks substantive and multi-turn — consider binding the pair with /fusion-next to get plan-once dispatch, audit bundles, and bounded rework. (Catalog channel: write turns stay on the planner model.)' }] },
+              ...(request.messages ?? []).slice(-1),
+            ],
+          }
+          rerouted.add(notice)
+          yield* ctx.llm.stream(notice)
+          return
+        }
+        yield* next(); return
+      }
+      if (cls === 'worker') writeTurns.set(sid, 0)
       verdict = await judgeWithPlanner(worker ?? lead, text)
       routeVerdicts.set(verdictKey, verdict)
     }
