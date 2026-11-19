@@ -6,34 +6,51 @@ profile: web
 hotReload:
   artifacts:
     - src/fusion-next.ts
+    - src/index.ts
+    - src/status.ts
+    - src/contracts.ts
+    - src/errors.ts
+    - src/prompts.ts
+    - src/bilingual.ts
+    - src/activity.ts
+    - src/message-source.ts
     - src/host/coordinator.ts
-    - src/host/settings.ts
-    - src/host/status.ts
+    - src/host/dispatch-v3.ts
+    - src/host/audit-v3.ts
+    - src/host/runtime-v3.ts
     - src/host/native-scopes.ts
     - src/host/native-worker.ts
+    - src/host/native-selection.ts
     - src/host/native-activity.ts
-    - src/host/native-exploration.ts
-    - src/host/model-output.ts
-    - src/host/native-task-context.ts
-    - src/host/native-worker-brief.ts
-    - src/host/native-worker-notices.ts
-    - src/contracts.ts
-    - src/task/reducer.ts
-    - src/task/state.ts
-    - src/context/guard.ts
-    - src/task/sqlite-store.ts
-    - lib/fusion-next.js
-    - src/host/history.ts
-    - src/host/native-model-control.ts
-    - src/host/native-workflow.ts
-    - src/host/native-role-sandbox.ts
-    - src/host/native-on-demand-context.ts
-    - src/host/native-context.ts
-    - src/host/native-compaction.ts
-    - src/host/native-checks.ts
     - src/host/native-effects.ts
     - src/host/native-usage.ts
-    - src/host/native-budget.ts
+    - src/host/native-keepalive.ts
+    - src/host/native-auxiliary.ts
+    - src/host/bindings.ts
+    - src/host/settings.ts
+    - src/host/session-pair.ts
+    - src/host/status.ts
+    - src/host/history.ts
+    - src/host/model-output.ts
+    - src/host/shell.ts
+    - src/host/subagent-seam.ts
+    - src/host/tool-table.ts
+    - src/host/workspace.ts
+    - src/host/http.ts
+    - src/host/cache-policy.ts
+    - src/host/cache-defaults.ts
     - src/profile/resolve.ts
+    - src/profile/compactor.ts
+    - src/profile/keepalive.ts
+    - src/context/guard.ts
+    - src/task/reducer.ts
+    - src/task/state.ts
     - src/task/status-index.ts
-    - src/host/compaction-routing.ts
+    - src/task/sqlite-store.ts
+    - src/task/store.ts
+    - prompts/lead.md
+    - prompts/worker.md
+    - prompts/model-lead.md
+    - prompts/model-worker.md
+    - prompts/compact.md
+    - lib/fusion-next.js

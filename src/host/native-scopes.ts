@@ -112,7 +112,9 @@ export class NativeFusionScopes {
           // closed instead of silently widening the Worker's tools.
           if (role === 'worker') {
             if (typeof scope.tools.restrict !== 'function') throw new Error('Fusion scope requires scope.tools.restrict; the connected Host SDK is incompatible')
-            stageDisposers.push(scope.tools.restrict({ allow: tools }))
+            // Host profiles differ in what they register globally (e.g. no pwsh
+            // outside the desktop sandbox); restrict() rejects unknown names.
+            stageDisposers.push(scope.tools.restrict({ allow: tools.filter(name => scope.tools.get(name) !== undefined) }))
           }
           // Any concrete allowlist is presented natively, including an implement-mode
           // Worker on 0.2.1 whose ceiling moved here from the removed start-time toolFilter.
@@ -191,7 +193,7 @@ export class NativeFusionScopes {
           assembled: assembled.tools,
           allowlist: readOnlyTools,
           registry: scope.tools.schemas(agent),
-          always: role === 'worker' ? ['fusion_next_read_state', 'fusion_next_read_evidence', 'fusion_next_list_evidence', 'fusion_next_submit_result'] : [],
+          // v3: roles register their own fusion_* tools via installTools;
         })
         if (projected.missing.length) throw new Error(fusionToolDiagnostic(projected.missing))
         return { ...assembled, variables: { ...(assembled.variables ?? {}), provider: route.provider, model: route.model }, tools: projected.tools }
@@ -208,7 +210,11 @@ export class NativeFusionScopes {
         const { reasoningEffort: _prior, ...rest } = config
         if (entry.binding.profile.interactionMode === 'model-like') {
           const { maxTokens, ...native } = rest
-          return { ...native, ...(role === 'lead' && maxTokens !== undefined ? { maxTokens } : {}) }
+          // Route-declared effort must survive the model-like strip: without it
+          // the executor silently runs at the model default, not the configured tier.
+          return { ...native,
+            ...(route.reasoningEffort !== undefined ? { reasoningEffort: ReasoningEffortId(route.reasoningEffort) } : {}),
+            ...(role === 'lead' && maxTokens !== undefined ? { maxTokens } : {}) }
         }
         const disclosed = this.callbacks.modelLimits
           ? await this.callbacks.modelLimits(route.provider, route.model) : undefined

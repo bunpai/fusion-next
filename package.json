@@ -1,6 +1,6 @@
 {
   "name": "fusion-next",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"
@@ -169,6 +169,7 @@
   },
   "scripts": {
     "build": "node scripts/build.mjs",
+    "build:local": "node scripts/build-local.mjs",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "link:host": "node scripts/link-host.mjs",

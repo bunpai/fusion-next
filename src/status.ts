@@ -1,5 +1,19 @@
-import type { ControlView } from './host/native-model-control.js'
 import type { PhysicalRoute, Role, TokenMeasurement, VerificationLevel } from './contracts.js'
+
+/** Legacy model-control shape kept for client compatibility; v3 never sets it. */
+export interface ControlView {
+  schemaVersion: 1
+  sessionId: string
+  profileDigest: string
+  epoch: number
+  recoveryEpoch?: number
+  leadRecoveries?: { taskId: string; count: number }
+  routes: Record<Role, PhysicalRoute>
+  waits: Partial<Record<Role, { taskId: string; code: string; at: string; retryNotBefore?: string; quotaResetAt: null }>>
+  operation?: { id: string; taskId: string; state: 'prepared' | 'dispatching' | 'delivered' | 'failed'; message?: unknown; error?: string }
+  schedule?: { id: string; taskId: string; epoch: number; dueAt: string; userSeq: number; state: 'scheduled' | 'cancelled' | 'fired' | 'failed'; reason?: string }
+  revision: number
+}
 
 /** Bounded, read-only UI projection. No prompts, tool arguments or credentials. */
 export interface FusionStatus {
